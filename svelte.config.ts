@@ -17,14 +17,16 @@ export const preprocess = [
 	prep({ typescript: false }),
 ]
 
-const IMPORT_PATH = resolve(__dirname, '../src/util/', 'events.ts').replace(/\\/g, '/')
+const IMPORT_PATH = resolve(__dirname, '../src/util/', 'events.ts')
 
-export const transformCssToJs = (css: string) =>
-	`import SVELTE_EVENTS from '${IMPORT_PATH}';
-	(() => {
-		var css;
-		SVELTE_EVENTS.PLUGIN_LOAD.subscribe(() => css = Blockbench.addCSS(${JSON.stringify(css)}));
-		SVELTE_EVENTS.PLUGIN_UNLOAD.subscribe(() => css?.delete());
-	})()`.replace(/[\t\n]/g, '')
+export const transformCssToJs = (
+	css: string
+) => `import { events as SVELTE_EVENTS } from ${JSON.stringify(IMPORT_PATH)};
+(() => {
+	const $deletable = Blockbench.addCSS(${JSON.stringify(css)});
+	function DELETE_SVELTE_CSS() { $deletable?.delete() }
+	SVELTE_EVENTS.UNLOAD.subscribe(DELETE_SVELTE_CSS, true);
+	SVELTE_EVENTS.UNINSTALL.subscribe(DELETE_SVELTE_CSS, true);
+})()`
 
 export default { preprocess, transformCssToJs }

@@ -1,18 +1,17 @@
-import { mountSvelteComponent } from 'src/util/mountSvelteComponent'
 import { SvelteComponentDev } from 'svelte/internal'
 import AnimatedJavaLoadingPopup from '../../components/animatedJavaLoadingPopup.svelte'
+import { injectSvelteCompomponent } from '../../util/injectSvelteComponent'
 import { Valuable } from '../../util/stores'
 
 const LOADED = new Valuable(false)
 const OFFLINE = new Valuable(false)
 const PROGRESS = new Valuable(0)
 const PROGRESS_LABEL = new Valuable('')
+let activeComponent: SvelteComponentDev | undefined
 
-let mountedPopup: SvelteComponentDev | undefined
-
-export function showLoadingPopup() {
-	if (mountedPopup) return
-	mountedPopup = mountSvelteComponent({
+export async function showLoadingPopup() {
+	if (activeComponent) return
+	activeComponent = await injectSvelteCompomponent({
 		component: AnimatedJavaLoadingPopup,
 		props: {
 			loaded: LOADED,
@@ -20,28 +19,30 @@ export function showLoadingPopup() {
 			progress: PROGRESS,
 			progressLabel: PROGRESS_LABEL,
 		},
-		target: document.body,
+		elementSelector() {
+			return document.body
+		},
 	})
 }
 
 export function hideLoadingPopup() {
-	if (!mountedPopup) return
+	if (!activeComponent) return
 	LOADED.set(true)
 	setTimeout(() => {
-		if (!mountedPopup) return
-		mountedPopup.$destroy()
-		mountedPopup = undefined
+		if (!activeComponent) return
+		activeComponent.$destroy()
+		activeComponent = undefined
 	}, 2000)
 }
 
 export function showOfflineError() {
-	if (!mountedPopup) return
+	if (!activeComponent) return
 	OFFLINE.set(true)
 	// FIXME - Change this into a X button instead of a timeout.
 	setTimeout(() => {
-		if (!mountedPopup) return
-		mountedPopup.$destroy()
-		mountedPopup = undefined
+		if (!activeComponent) return
+		activeComponent.$destroy()
+		activeComponent = undefined
 	}, 10000)
 }
 

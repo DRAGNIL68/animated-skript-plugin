@@ -1,64 +1,71 @@
+import { Subscribable } from './subscribable'
+import * as PACKAGE from '../../package.json'
 import { Variant } from '../variants'
-import { subscribable } from './subscribable'
+
+export class PluginEvent<EventData = void> extends Subscribable<EventData> {
+	protected static events: Record<string, PluginEvent<any>> = {}
+	constructor(public name: string) {
+		super()
+		PluginEvent.events[name] = this
+	}
+}
 
 // Plugin Events
-const EVENTS = {
-	PLUGIN_LOAD: subscribable<void>(),
-	PLUGIN_FINISHED_LOADING: subscribable<void>(),
+export const events = {
+	LOAD: new PluginEvent('load'),
+	UNLOAD: new PluginEvent('unload'),
+	INSTALL: new PluginEvent('install'),
+	UNINSTALL: new PluginEvent('uninstall'),
 
-	PLUGIN_UNLOAD: subscribable<void>(),
-	PLUGIN_FINISHED_UNLOADING: subscribable<void>(),
+	INJECT_MODS: new PluginEvent('injectMods'),
+	EXTRACT_MODS: new PluginEvent('extractMods'),
 
-	PLUGIN_INSTALL: subscribable<void>(),
-	PLUGIN_UNINSTALL: subscribable<void>(),
+	NETWORK_CONNECTED: new PluginEvent('networkConnected'),
 
-	EXTERNAL_PLUGIN_LOAD: subscribable<BBPlugin>(),
-	EXTERNAL_PLUGIN_UNLOAD: subscribable<BBPlugin>(),
+	MINECRAFT_ASSETS_LOADED: new PluginEvent('minecraftAssetsLoaded'),
+	MINECRAFT_REGISTRY_LOADED: new PluginEvent('minecraftRegistriesLoaded'),
+	MINECRAFT_FONTS_LOADED: new PluginEvent('minecraftFontsLoaded'),
+	BLOCKSTATE_REGISTRY_LOADED: new PluginEvent('blockstateRegistryLoaded'),
 
-	INJECT_MODS: subscribable<void>(),
-	EXTRACT_MODS: subscribable<void>(),
+	PRE_SELECT_PROJECT: new PluginEvent<ModelProject>('preSelectProject'),
+	SELECT_PROJECT: new PluginEvent<ModelProject>('selectProject'),
+	UNSELECT_PROJECT: new PluginEvent<ModelProject>('deselectProject'),
 
-	NETWORK_CONNECTED: subscribable<void>(),
+	SELECT_AJ_PROJECT: new PluginEvent<ModelProject>('selectAJProject'),
+	UNSELECT_AJ_PROJECT: new PluginEvent<ModelProject>('unselectAJProject'),
 
-	MINECRAFT_ASSETS_LOADED: subscribable<void>(),
-	MINECRAFT_REGISTRY_LOADED: subscribable<void>(),
-	MINECRAFT_FONTS_LOADED: subscribable<void>(),
-	BLOCKSTATE_REGISTRY_LOADED: subscribable<void>(),
+	CREATE_VARIANT: new PluginEvent<Variant>('createVariant'),
+	UPDATE_VARIANT: new PluginEvent<Variant>('updateVariant'),
+	DELETE_VARIANT: new PluginEvent<Variant>('deleteVariant'),
+	SELECT_VARIANT: new PluginEvent<Variant>('selectVariant'),
 
-	PRE_SELECT_PROJECT: subscribable<ModelProject>(),
-	POST_SELECT_PROJECT: subscribable<ModelProject>(),
-	SELECT_PROJECT: subscribable<ModelProject>(),
-	UNSELECT_PROJECT: subscribable<ModelProject>(),
-	CLOSE_PROJECT: subscribable<ModelProject>(),
+	SELECT_KEYFRAME: new PluginEvent<_Keyframe>('selectKeyframe'),
+	UNSELECT_KEYFRAME: new PluginEvent('unselectKeyframe'),
 
-	SELECT_AJ_PROJECT: subscribable<ModelProject>(),
-	UNSELECT_AJ_PROJECT: subscribable<ModelProject>(),
-
-	CREATE_VARIANT: subscribable<Variant>(),
-	UPDATE_VARIANT: subscribable<Variant>(),
-	DELETE_VARIANT: subscribable<Variant>(),
-	SELECT_VARIANT: subscribable<Variant>(),
-
-	UPDATE_KEYFRAME_SELECTION: subscribable<void>(),
-
-	UPDATE_SELECTION: subscribable<void>(),
-
-	UPDATE_VIEW: subscribable<void>(),
-
-	UNDO: subscribable<UndoEntry>(),
-	REDO: subscribable<UndoEntry>(),
+	UPDATE_SELECTION: new PluginEvent('updateSelection'),
 }
-export default EVENTS
+
+function injectionHandler() {
+	console.groupCollapsed(`Injecting BlockbenchMods added by '${PACKAGE.name}'`)
+	events.INJECT_MODS.dispatch()
+	console.groupEnd()
+}
+
+function extractionHandler() {
+	console.groupCollapsed(`Extracting BlockbenchMods added by '${PACKAGE.name}'`)
+	events.EXTRACT_MODS.dispatch()
+	console.groupEnd()
+}
+
+events.LOAD.subscribe(injectionHandler)
+events.UNLOAD.subscribe(extractionHandler)
+events.INSTALL.subscribe(injectionHandler)
+events.UNINSTALL.subscribe(extractionHandler)
 
 Blockbench.on<EventName>('select_project', ({ project }: { project: ModelProject }) => {
-	EVENTS.SELECT_PROJECT.publish(project)
+	events.SELECT_PROJECT.dispatch(project)
 })
 Blockbench.on<EventName>('unselect_project', ({ project }: { project: ModelProject }) => {
-	EVENTS.UNSELECT_PROJECT.publish(project)
+	events.UNSELECT_PROJECT.dispatch(project)
 })
-Blockbench.on<EventName>('close_project', () => EVENTS.CLOSE_PROJECT.publish(Project!))
-Blockbench.on<EventName>('update_keyframe_selection', EVENTS.UPDATE_KEYFRAME_SELECTION.publish)
-Blockbench.on<EventName>('update_selection', EVENTS.UPDATE_SELECTION.publish)
-Blockbench.on<EventName>('update_view', EVENTS.UPDATE_VIEW.publish)
-Blockbench.on<EventName>('undo', EVENTS.UNDO.publish)
-Blockbench.on<EventName>('redo', EVENTS.REDO.publish)
+Blockbench.on<EventName>('update_selection', () => events.UPDATE_SELECTION.dispatch())

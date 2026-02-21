@@ -1,15 +1,17 @@
-import { activeProjectIsBlueprintFormat } from '../formats/blueprint'
-import { registerMod } from '../util/moddingTools'
+import { BLUEPRINT_FORMAT } from '../blueprintFormat'
+import { PACKAGE } from '../constants'
+import { createBlockbenchMod } from '../util/moddingTools'
 
-registerMod({
-	id: `animated-java:panel-mod`,
+createBlockbenchMod(
+	`${PACKAGE.name}:panelMod`,
+	{
+		panel: Interface.Panels.animations,
+	},
+	context => {
+		const originalFilesFunction = context.panel.inside_vue.$options.computed.files
 
-	apply: () => {
-		const panel = Interface.Panels.animations
-
-		const originalFilesFunction = panel.inside_vue.$options.computed!.files as () => any
-		panel.inside_vue.$options.computed!.files = function (this) {
-			if (activeProjectIsBlueprintFormat()) {
+		context.panel.inside_vue.$options.computed.files = function (this) {
+			if (Format.id === BLUEPRINT_FORMAT.id) {
 				return {
 					'': {
 						animations: [
@@ -21,13 +23,13 @@ registerMod({
 					},
 				}
 			}
+			// eslint-disable-next-line @typescript-eslint/no-unsafe-return
 			return originalFilesFunction.call(this)
 		}
 
-		return { panel, originalFilesFunction }
+		return { ...context, originalFilesFunction }
 	},
-
-	revert: ({ panel, originalFilesFunction }) => {
-		panel.inside_vue.$options.computed!.files = originalFilesFunction
-	},
-})
+	context => {
+		context.panel.inside_vue.$options.computed.files = context.originalFilesFunction
+	}
+)

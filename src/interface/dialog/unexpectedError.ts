@@ -8,9 +8,9 @@ export function openUnexpectedErrorDialog(error: Error) {
 		id: `${PACKAGE.name}:unexpectedError`,
 		title: translate('dialog.unexpected_error.title'),
 		width: 600,
-		content: {
-			component: UnexpectedErrorDialog,
-			props: { error },
+		component: UnexpectedErrorDialog,
+		props: {
+			error,
 		},
 		preventKeybinds: true,
 		buttons: [translate('dialog.unexpected_error.close_button')],

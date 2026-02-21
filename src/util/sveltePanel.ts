@@ -1,7 +1,7 @@
-import { type ComponentConstructorOptions, SvelteComponent } from 'svelte'
-import { PACKAGE } from '../constants'
-import { pollUntilResult } from '../util/promises'
-import { type SvelteComponentConstructor } from './misc'
+import { ComponentConstructorOptions, SvelteComponent } from 'svelte'
+import { SvelteComponentConstructor } from './misc'
+import * as PACKAGE from '../../package.json'
+import { pollPromise } from '../util/promises'
 
 type SveltePanelOptions<T, U extends ComponentConstructorOptions> = Omit<
 	PanelOptions,
@@ -25,10 +25,7 @@ export class SveltePanel extends Panel {
 			},
 		})
 
-		void pollUntilResult(
-			() => document.querySelector(`#${mountId}`),
-			() => false
-		).then(el => {
+		void pollPromise(() => document.querySelector(`#${mountId}`)).then(el => {
 			this.instance = new options.component({
 				target: el.parentElement,
 				props: options.props,

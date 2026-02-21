@@ -1,27 +1,30 @@
-import * as crypto from 'crypto'
-import type {
-	IBlueprintDisplayEntityConfigJSON,
-	IBlueprintLocatorConfigJSON,
-	IBlueprintVariantJSON,
-} from '../formats/blueprint'
-import { type Alignment, TextDisplay } from '../outliner/textDisplay'
-import { VanillaBlockDisplay } from '../outliner/vanillaBlockDisplay'
-import { type ItemDisplayMode, VanillaItemDisplay } from '../outliner/vanillaItemDisplay'
 import {
-	type IMinecraftResourceLocation,
+	IBlueprintCameraConfigJSON,
+	type IBlueprintBoneConfigJSON,
+	IBlueprintLocatorConfigJSON,
+	IBlueprintTextDisplayConfigJSON,
+	IBlueprintVariantJSON,
+} from '../blueprintFormat'
+import { BoneConfig } from '../nodeConfigs'
+import { Alignment, TextDisplay } from '../outliner/textDisplay'
+import {
+	IMinecraftResourceLocation,
 	parseResourcePackPath,
-	sanitizeStorageKey,
+	toSafeFuntionName,
 } from '../util/minecraftUtil'
 import { Variant } from '../variants'
 import {
 	correctSceneAngle,
 	getFrame,
-	type INodeTransform,
 	restoreSceneAngle,
 	updatePreview,
+	type INodeTransform,
 } from './animationRenderer'
+import * as crypto from 'crypto'
+import { JsonText } from './minecraft/jsonText'
+import { VanillaItemDisplay } from '../outliner/vanillaItemDisplay'
+import { VanillaBlockDisplay } from '../outliner/vanillaBlockDisplay'
 import { IntentionalExportError } from './exporter'
-import { JsonText } from './jsonText'
 
 export interface IRenderedFace {
 	uv: number[]
@@ -44,7 +47,6 @@ export interface IRenderedElement {
 		  }
 		| number[]
 	faces?: Record<string, IRenderedFace>
-	light_emission?: number
 }
 
 /**
@@ -61,32 +63,14 @@ export interface IRenderedModel {
 
 export interface IRenderedNode {
 	type: string
-	/** The origin name of the node */
 	name: string
-	/** A sanitized version of {@link IRenderedNode.name} that is safe to use as a key in a storage object. */
-	storage_name: string
-	/**
-	 * The UUID of the node
-	 *
-	 * Corresponds to the UUID of the OutlinerElement from which this node was rendered.
-	 */
+	safe_name: string
 	uuid: string
-	/** The UUID of the parent node */
 	parent?: string
 	/**
 	 * The default transformation of the node
 	 */
 	default_transform: INodeTransform
-}
-
-export interface IRenderedDisplayEntityNode extends IRenderedNode {
-	/**
-	 * The base scale of the bone, used to offset any rescaling done to the bone's model due to exceeding the 3x3x3 model size limit.
-	 */
-	base_scale: number
-	bounding_box: THREE.Box3
-	on_summon_function?: string
-	configs?: IDisplayEntityConfigs
 }
 
 export interface ICamera extends OutlinerElement {
@@ -97,50 +81,67 @@ export interface ICamera extends OutlinerElement {
 	linked_preview: string
 	camera_linked: boolean
 	visibility: boolean
+	config: IBlueprintCameraConfigJSON
 	preview_controller: NodePreviewController
 }
 
-export interface IDisplayEntityConfigs {
-	default: IBlueprintDisplayEntityConfigJSON
-	variants: Record<string, IBlueprintDisplayEntityConfigJSON>
-}
-
 export interface IRenderedNodes {
-	Bone: IRenderedDisplayEntityNode & {
+	Bone: IRenderedNode & {
 		type: 'bone'
-	}
-	TextDisplay: IRenderedDisplayEntityNode & {
-		type: 'text_display'
-		text: string
-		line_width: number
-		background_color: string
-		background_alpha: number
-		align: Alignment
-		shadow: boolean
-		see_through: boolean
-	}
-	ItemDisplay: IRenderedDisplayEntityNode & {
-		type: 'item_display'
-		item: string
-		item_display: ItemDisplayMode
-	}
-	BlockDisplay: IRenderedDisplayEntityNode & {
-		type: 'block_display'
-		block: string
+		bounding_box: THREE.Box3
+		/**
+		 * The base scale of the bone, used to offset any rescaling done to the bone's model due to exceeding the 3x3x3 model size limit.
+		 */
+		base_scale: number
+		configs?: {
+			default?: IBlueprintBoneConfigJSON
+			variants: Record<string, IBlueprintBoneConfigJSON>
+		}
 	}
 	Struct: IRenderedNode & {
 		type: 'struct'
 	}
 	Camera: IRenderedNode & {
 		type: 'camera'
-		/** The maximum distance this node travels away from the root entity while animating. */
-		max_distance: number
+		config?: IBlueprintCameraConfigJSON
 	}
 	Locator: IRenderedNode & {
 		type: 'locator'
-		/** The maximum distance this node travels away from the root entity while animating. */
-		max_distance: number
 		config?: IBlueprintLocatorConfigJSON
+	}
+	TextDisplay: IRenderedNode & {
+		type: 'text_display'
+		text?: JsonText
+		line_width: number
+		background_color: string
+		background_alpha: number
+		align: Alignment
+		shadow: boolean
+		see_through: boolean
+		/**
+		 * The base scale of the bone, used to offset any rescaling done to the bone's model due to exceeding the 3x3x3 model size limit.
+		 */
+		base_scale: number
+		config?: IBlueprintTextDisplayConfigJSON
+	}
+	ItemDisplay: IRenderedNode & {
+		type: 'item_display'
+		item: string
+		item_display: string
+		/**
+		 * The base scale of the bone, used to offset any rescaling done to the bone's model due to exceeding the 3x3x3 model size limit.
+		 */
+		base_scale: number
+		config?: IBlueprintBoneConfigJSON
+	}
+	BlockDisplay: IRenderedNode & {
+		type: 'block_display'
+		block: string
+		/**
+		 * The base scale of the bone, used to offset any rescaling done to the bone's model due to exceeding the 3x3x3 model size limit.
+		 */
+		base_scale: number
+		config?: IBlueprintBoneConfigJSON
 	}
 }
 
@@ -214,16 +215,18 @@ function renderCube(cube: Cube, rig: IRenderedRig, model: IRenderedModel) {
 			axis,
 			origin: cube.origin,
 		}
-		if (cube.rescale) {
-			element.rotation.rescale = true
-		}
-	} else if (cube.rescale) {
-		element.rotation = {
-			angle: 0,
-			axis: cube.rotation_axis || 'y',
-			origin: cube.origin,
-			rescale: true,
-		}
+	}
+
+	if (cube.rescale) {
+		// @ts-ignore
+		if (element.rotation) element.rotation.rescale = true
+		else
+			element.rotation = {
+				angle: 0,
+				axis: cube.rotation_axis || 'y',
+				origin: cube.origin,
+				rescale: true,
+			}
 	}
 
 	if (cube.parent instanceof Group) {
@@ -259,11 +262,6 @@ function renderCube(cube: Cube, rig: IRenderedRig, model: IRenderedModel) {
 	}
 
 	if (Object.keys(element.faces).length === 0) return
-
-	if (cube.light_emission) {
-		element.light_emission = cube.light_emission
-	}
-
 	model.elements ??= []
 	model.elements.push(element)
 }
@@ -273,24 +271,16 @@ export function getTextureResourceLocation(texture: Texture, rig: IRenderedRig) 
 	if (TEXTURE_RESOURCE_LOCATION_CACHE.has(texture.uuid)) {
 		return TEXTURE_RESOURCE_LOCATION_CACHE.get(texture.uuid)!
 	}
-
-	let textureName = texture.name.replace(/\.png$/, '')
-	textureName = sanitizeStorageKey(textureName) + '.png'
-
+	if (!texture.name.endsWith('.png')) texture.name += '.png'
 	if (texture.path && fs.existsSync(texture.path) && fs.statSync(texture.path).isFile()) {
 		const parsed = parseResourcePackPath(texture.path)
 		if (parsed) {
 			TEXTURE_RESOURCE_LOCATION_CACHE.set(texture.uuid, parsed)
 			return parsed
 		}
-		console.warn(
-			`Texture ${texture.name} has a custom path that is not in a valid resource pack location: ${texture.path}`
-		)
 	}
-
-	const path = PathModule.join(rig.texture_export_folder, textureName)
+	const path = PathModule.join(rig.texture_export_folder, toSafeFuntionName(texture.name))
 	const parsed = parseResourcePackPath(path)
-
 	if (parsed) {
 		TEXTURE_RESOURCE_LOCATION_CACHE.set(texture.uuid, parsed)
 		return parsed
@@ -300,34 +290,26 @@ export function getTextureResourceLocation(texture: Texture, rig: IRenderedRig) 
 	throw new Error(`Invalid texture path: ${path}`)
 }
 
-function getNodeBoundingBox(node: Group | TextDisplay | VanillaItemDisplay | VanillaBlockDisplay) {
+function getBoneBoundingBox(group: Group) {
+	const children = group.children.filter(e => e instanceof Cube) as Cube[]
 	const box = new THREE.Box3()
-	if (node instanceof Group) {
-		const children = node.children.filter(e => e instanceof Cube) as Cube[]
-		for (const child of children) {
-			box.expandByPoint(
-				new THREE.Vector3(
-					child.from[0] - child.inflate,
-					child.from[1] - child.inflate,
-					child.from[2] - child.inflate
-				)
+	box.expandByPoint(new THREE.Vector3(group.origin[0], group.origin[1], group.origin[2]))
+	for (const child of children) {
+		box.expandByPoint(
+			new THREE.Vector3(
+				child.from[0] - child.inflate,
+				child.from[1] - child.inflate,
+				child.from[2] - child.inflate
 			)
-			box.expandByPoint(
-				new THREE.Vector3(
-					child.to[0] + child.inflate,
-					child.to[1] + child.inflate,
-					child.to[2] + child.inflate
-				)
+		)
+		box.expandByPoint(
+			new THREE.Vector3(
+				child.to[0] + child.inflate,
+				child.to[1] + child.inflate,
+				child.to[2] + child.inflate
 			)
-		}
-	} else if (
-		node instanceof TextDisplay ||
-		node instanceof VanillaItemDisplay ||
-		node instanceof VanillaBlockDisplay
-	) {
-		box.setFromObject(node.mesh)
+		)
 	}
-	box.expandByPoint(new THREE.Vector3(node.origin[0], node.origin[1], node.origin[2]))
 	return box
 }
 
@@ -350,13 +332,12 @@ function renderGroup(
 	const renderedBone: IRenderedNodes['Bone'] = {
 		type: 'bone',
 		name: group.name,
-		storage_name: sanitizeStorageKey(group.name),
+		safe_name: toSafeFuntionName(group.name),
 		uuid: group.uuid,
 		parent: parentId,
-		bounding_box: getNodeBoundingBox(group),
+		bounding_box: getBoneBoundingBox(group),
 		base_scale: 1,
-		configs: structuredClone(group.configs),
-		on_summon_function: group.onSummonFunction?.trim(),
+		configs: group.configs,
 		// This is a placeholder value that will be updated later once the animation renderer is run.
 		default_transform: {} as INodeTransform,
 	}
@@ -413,12 +394,12 @@ function renderGroup(
 	}
 
 	// Export a struct instead of a bone if no elements are present
-	if (!groupModel.model?.elements || groupModel.model.elements.length === 0) {
+	if (!groupModel.model || !groupModel.model.elements || groupModel.model.elements.length === 0) {
 		delete defaultVariant.models[group.uuid]
 		const struct: IRenderedNodes['Struct'] = {
 			type: 'struct',
 			name: group.name,
-			storage_name: sanitizeStorageKey(group.name),
+			safe_name: renderedBone.safe_name,
 			uuid: group.uuid,
 			parent: parentId,
 			default_transform: {} as INodeTransform,
@@ -460,15 +441,13 @@ function renderItemDisplay(display: VanillaItemDisplay, rig: IRenderedRig) {
 	const renderedBone: IRenderedNodes['ItemDisplay'] = {
 		type: 'item_display',
 		name: display.name,
-		storage_name: sanitizeStorageKey(display.name),
+		safe_name: toSafeFuntionName(display.name),
 		uuid: display.uuid,
 		parent: parentId,
 		item: display.item,
 		item_display: display.itemDisplay,
 		base_scale: 1,
-		configs: structuredClone(display.configs),
-		on_summon_function: display.onSummonFunction?.trim(),
-		bounding_box: getNodeBoundingBox(display),
+		config: display.config,
 		default_transform: {} as INodeTransform,
 	}
 
@@ -490,14 +469,12 @@ function renderBlockDisplay(display: VanillaBlockDisplay, rig: IRenderedRig) {
 	const renderedBone: IRenderedNodes['BlockDisplay'] = {
 		type: 'block_display',
 		name: display.name,
-		storage_name: sanitizeStorageKey(display.name),
+		safe_name: toSafeFuntionName(display.name),
 		uuid: display.uuid,
 		block: display.block,
 		parent: parentId,
 		base_scale: 1,
-		configs: structuredClone(display.configs),
-		on_summon_function: display.onSummonFunction?.trim(),
-		bounding_box: getNodeBoundingBox(display),
+		config: display.config,
 		default_transform: {} as INodeTransform,
 	}
 
@@ -516,24 +493,21 @@ function renderTextDisplay(display: TextDisplay, rig: IRenderedRig): INodeStruct
 		throw new Error(`Invalid bone path: ${display.name} -> ${path}`)
 	}
 
-	const backgroundColor = tinycolor(display.backgroundColor)
 	const renderedBone: IRenderedNodes['TextDisplay'] = {
 		type: 'text_display',
 		name: display.name,
-		storage_name: sanitizeStorageKey(display.name),
+		safe_name: toSafeFuntionName(display.name),
 		uuid: display.uuid,
 		parent: parentId,
-		text: display.text,
+		text: JsonText.fromString(display.text),
 		line_width: display.lineWidth,
-		background_color: JsonText.moveHex8AlphaToStart(backgroundColor.toHex8String()),
-		background_alpha: backgroundColor.getAlpha(),
+		background_color: display.backgroundColor,
+		background_alpha: display.backgroundAlpha,
 		align: display.align,
 		shadow: display.shadow,
 		see_through: display.seeThrough,
 		base_scale: 1,
-		configs: structuredClone(display.configs),
-		on_summon_function: display.onSummonFunction?.trim(),
-		bounding_box: getNodeBoundingBox(display),
+		config: display.config,
 		default_transform: {} as INodeTransform,
 	}
 
@@ -551,11 +525,10 @@ function renderLocator(locator: Locator, rig: IRenderedRig) {
 	const renderedLocator: IRenderedNodes['Locator'] = {
 		type: 'locator',
 		name: locator.name,
-		storage_name: sanitizeStorageKey(locator.name),
+		safe_name: toSafeFuntionName(locator.name),
 		uuid: locator.uuid,
 		parent: parentId,
-		config: structuredClone(locator.config),
-		max_distance: 0,
+		config: locator.config,
 		default_transform: {} as INodeTransform,
 	}
 
@@ -569,10 +542,10 @@ function renderCamera(camera: ICamera, rig: IRenderedRig) {
 	const renderedCamera: IRenderedNodes['Camera'] = {
 		type: 'camera',
 		name: camera.name,
-		storage_name: sanitizeStorageKey(camera.name),
+		safe_name: toSafeFuntionName(camera.name),
 		uuid: camera.uuid,
 		parent: parentId,
-		max_distance: 0,
+		config: camera.config,
 		default_transform: {} as INodeTransform,
 	}
 
@@ -617,15 +590,15 @@ function renderVariantModels(variant: Variant, rig: IRenderedRig) {
 			continue
 		}
 
-		const modelParent = PathModule.join(rig.model_export_folder, bone.storage_name + '.json')
+		const modelParent = PathModule.join(rig.model_export_folder, bone.safe_name + '.json')
 		const parsed = parseResourcePackPath(modelParent)
 		if (!parsed) {
-			throw new Error(`Invalid Bone Name: '${bone.storage_name}' -> '${modelParent}'`)
+			throw new Error(`Invalid Bone Name: '${bone.safe_name}' -> '${modelParent}'`)
 		}
 
 		const modelPath = variant.isDefault
-			? PathModule.join(rig.model_export_folder, bone.storage_name + '.json')
-			: PathModule.join(rig.model_export_folder, variant.name, bone.storage_name + '.json')
+			? PathModule.join(rig.model_export_folder, bone.safe_name + '.json')
+			: PathModule.join(rig.model_export_folder, variant.name, bone.safe_name + '.json')
 		const parsedModelPath = parseResourcePackPath(modelPath)
 		if (!parsedModelPath) {
 			throw new Error(`Invalid Variant Name: '${variant.name}' -> '${modelPath}'`)
@@ -654,28 +627,40 @@ export function hashRig(rig: IRenderedRig) {
 		hash.update(node.default_transform.matrix.elements.toString())
 		switch (node.type) {
 			case 'bone': {
-				hash.update(
-					';' + JSON.stringify(rig.variants[Variant.getDefault().uuid].models[nodeUuid])
-				)
-				if (node.configs) hash.update(';' + JSON.stringify(node.configs))
+				const model = rig.variants[Variant.getDefault().uuid].models[nodeUuid]
+				hash.update(';' + JSON.stringify(model) || '')
+				if (!node.configs) break // Skip if there are no configs
+				if (node.configs.default) {
+					const defaultConfig = BoneConfig.fromJSON(node.configs.default)
+					if (!defaultConfig.isDefault()) {
+						hash.update('defaultconfig;')
+						hash.update(defaultConfig.toNBT().toString())
+					}
+				}
+				for (const [variantName, config] of Object.entries(node.configs.variants)) {
+					const variantConfig = BoneConfig.fromJSON(config)
+					if (!variantConfig.isDefault()) {
+						hash.update('variantconfig;')
+						hash.update(variantName)
+						hash.update(variantConfig.toNBT().toString())
+					}
+				}
 				break
 			}
-			case 'block_display':
-				hash.update(`;${node.block}`)
-				if (node.configs) hash.update(';' + JSON.stringify(node.configs))
-				break
-
-			case 'item_display':
-				hash.update(`;${node.item};${node.item_display}`)
-				if (node.configs) hash.update(';' + JSON.stringify(node.configs))
-				break
-
-			case 'text_display':
-				hash.update(`;${node.text}`)
-				if (node.configs) hash.update(';' + JSON.stringify(node.configs))
-				break
-
 			case 'locator': {
+				if (node.config) {
+					hash.update(';' + JSON.stringify(node.config))
+				}
+				break
+			}
+			case 'camera': {
+				if (node.config) {
+					hash.update(';' + JSON.stringify(node.config))
+				}
+				break
+			}
+			case 'text_display': {
+				hash.update(`;${node.text?.toString() as string}`)
 				if (node.config) {
 					hash.update(';' + JSON.stringify(node.config))
 				}
@@ -731,6 +716,7 @@ export function renderRig(modelExportFolder: string, textureExportFolder: string
 			}
 			case node instanceof Locator: {
 				renderLocator(node, rig)
+
 				break
 			}
 			case node instanceof TextDisplay: {

@@ -1,6 +1,6 @@
-import type { IBlueprintVariantJSON } from './formats/blueprint'
-import EVENTS from './util/events'
-import { sanitizeStorageKey } from './util/minecraftUtil'
+import { IBlueprintVariantJSON } from './blueprintFormat'
+import { events } from './util/events'
+import { toSafeFuntionName } from './util/minecraftUtil'
 
 export class TextureMap {
 	map: Map<string, string>
@@ -9,39 +9,39 @@ export class TextureMap {
 		this.map = new Map()
 	}
 
-	add(key: string, value: string) {
+	public add(key: string, value: string) {
 		this.map.set(key, value)
 	}
 
-	get(key: string) {
+	public get(key: string) {
 		return this.map.get(key)
 	}
 
-	has(key: string) {
+	public has(key: string) {
 		return this.map.has(key)
 	}
 
-	delete(key: string) {
+	public delete(key: string) {
 		this.map.delete(key)
 	}
 
 	/**
 	 * Given a texture or texture uuid, return the mapped texture
 	 */
-	getMappedTexture(texture: Texture | string): Texture | undefined {
+	public getMappedTexture(texture: Texture | string): Texture | undefined {
 		const uuid = this.map.get(texture instanceof Texture ? texture.uuid : texture)
 		return Texture.all.find(t => t.uuid === uuid)
 	}
 
-	setMappedTexture(texture: Texture, mappedTexture: Texture) {
+	public setMappedTexture(texture: Texture, mappedTexture: Texture) {
 		this.map.set(texture.uuid, mappedTexture.uuid)
 	}
 
-	toJSON() {
+	public toJSON() {
 		return Object.fromEntries(this.map)
 	}
 
-	static fromJSON(json: Record<string, string>): TextureMap {
+	public static fromJSON(json: Record<string, string>): TextureMap {
 		const textureMap = new TextureMap()
 		for (const [key, value] of Object.entries(json)) {
 			textureMap.add(key, value)
@@ -49,13 +49,13 @@ export class TextureMap {
 		return textureMap
 	}
 
-	copy() {
+	public copy() {
 		const textureMap = new TextureMap()
 		textureMap.map = new Map(this.map)
 		return textureMap
 	}
 
-	verifyTextures() {
+	public verifyTextures() {
 		for (const [key, value] of this.map) {
 			if (!Texture.all.some(t => t.uuid === value)) {
 				this.map.delete(key)
@@ -73,17 +73,17 @@ export class VariantBoneConfig {
 }
 
 export class Variant {
-	static all: Variant[] = []
-	static selected: Variant | undefined
+	public static all: Variant[] = []
+	public static selected: Variant | undefined
 
-	id: number
-	displayName: string
-	name: string
-	uuid: string
-	textureMap: TextureMap
-	isDefault = false
-	generateNameFromDisplayName = true
-	excludedNodes: CollectionItem[] = []
+	public id: number
+	public displayName: string
+	public name: string
+	public uuid: string
+	public textureMap: TextureMap
+	public isDefault = false
+	public generateNameFromDisplayName = true
+	public excludedNodes: CollectionItem[] = []
 
 	constructor(displayName: string, isDefault = false) {
 		this.displayName = Variant.makeDisplayNameUnique(this, displayName)
@@ -93,28 +93,26 @@ export class Variant {
 		this.textureMap = new TextureMap()
 		this.id = Variant.all.length
 		if (this.isDefault) {
-			if (Variant.hasDefault()) {
-				throw new Error('There can only be one default variant!')
-			}
 			this.displayName = 'Default'
 			this.name = 'default'
 		}
 		Variant.all.push(this)
-		EVENTS.CREATE_VARIANT.publish(this)
+		// this.select()
+		events.CREATE_VARIANT.dispatch(this)
 	}
 
-	select() {
+	public select() {
 		if (Variant.selected) Variant.selected.unselect()
 		Variant.selected = this
 		Canvas.updateAllFaces()
-		EVENTS.SELECT_VARIANT.publish(this)
+		events.SELECT_VARIANT.dispatch(this)
 	}
 
-	unselect() {
+	public unselect() {
 		Variant.selected = undefined
 	}
 
-	delete() {
+	public delete() {
 		// Cannot delete default variant
 		if (this.isDefault) return
 
@@ -128,10 +126,10 @@ export class Variant {
 			Variant.selectDefault()
 		}
 
-		EVENTS.DELETE_VARIANT.publish(this)
+		events.DELETE_VARIANT.dispatch(this)
 	}
 
-	toJSON() {
+	public toJSON() {
 		const json: IBlueprintVariantJSON = {
 			name: this.name,
 			display_name: this.displayName,
@@ -145,7 +143,7 @@ export class Variant {
 		return json
 	}
 
-	duplicate() {
+	public duplicate() {
 		const variant = new Variant(this.displayName, false)
 		variant.uuid = guid()
 		variant.isDefault = false
@@ -155,11 +153,11 @@ export class Variant {
 		variant.select()
 	}
 
-	verifyTextureMap() {
+	public verifyTextureMap() {
 		this.textureMap.verifyTextures()
 	}
 
-	static fromJSON(json: IBlueprintVariantJSON, isDefault = false): Variant {
+	public static fromJSON(json: IBlueprintVariantJSON, isDefault = false): Variant {
 		const variant = new Variant(json.display_name, isDefault)
 		variant.uuid = json.uuid
 		if (json.is_default) {
@@ -177,13 +175,13 @@ export class Variant {
 		return variant
 	}
 
-	static makeDisplayNameUnique(variant: Variant, displayName: string): string {
+	public static makeDisplayNameUnique(variant: Variant, displayName: string): string {
 		if (!Variant.all.some(v => v !== variant && v.displayName === displayName)) {
 			return displayName
 		}
 
 		let i = 1
-		const match = /\d+$/.exec(displayName)
+		const match = displayName.match(/\d+$/)
 		if (match) {
 			i = parseInt(match[0])
 			displayName = displayName.slice(0, -match[0].length)
@@ -201,14 +199,14 @@ export class Variant {
 		throw new Error('Could not make Variant display name unique!')
 	}
 
-	static makeNameUnique(variant: Variant, name: string): string {
-		name = sanitizeStorageKey(name)
+	public static makeNameUnique(variant: Variant, name: string): string {
+		name = toSafeFuntionName(name)
 		if (!Variant.all.some(v => v !== variant && v.name === name)) {
 			return name
 		}
 
 		let i = 1
-		const match = /\d+$/.exec(name)
+		const match = name.match(/\d+$/)
 		if (match) {
 			i = parseInt(match[0])
 			name = name.slice(0, -match[0].length)
@@ -226,31 +224,20 @@ export class Variant {
 		throw new Error('Could not make Variant name unique!')
 	}
 
-	static selectDefault() {
-		Variant.getDefault().select()
+	public static selectDefault() {
+		const variant = Variant.all.find(v => v.isDefault)
+		if (variant) variant.select()
 	}
 
-	static getByUUID(uuid: string): Variant | undefined {
-		return Variant.all.find(v => v.uuid === uuid)
-	}
-
-	static allExcludingDefault(): Variant[] {
-		return Variant.all.filter(v => !v.isDefault)
-	}
-
-	static hasDefault(): boolean {
-		return Variant.all.some(v => v.isDefault)
-	}
-
-	static getDefault(): Variant {
-		return Variant.all.find(v => v.isDefault) ?? new Variant('Default', true)
+	public static getDefault(): Variant {
+		return Variant.all.find(v => v.isDefault) ?? Variant.all[0]
 	}
 }
 
-EVENTS.SELECT_PROJECT.subscribe(project => {
+events.SELECT_PROJECT.subscribe(project => {
 	project.variants ??= []
 	Variant.all = project.variants
 })
-EVENTS.UNSELECT_PROJECT.subscribe(() => {
+events.UNSELECT_PROJECT.subscribe(() => {
 	Variant.all = []
 })

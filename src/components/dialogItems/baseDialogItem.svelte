@@ -1,105 +1,98 @@
 <script lang="ts">
-	import { blueprintSettingErrors } from '../../formats/blueprint/settings'
+	import { blueprintSettingErrors } from '../../blueprintSettings'
 	import { translate } from '../../util/translation'
 
 	export let label: string
-	export let tooltip = ''
-	export let warningText = ''
-	export let errorText = ''
+	export let tooltip: string = ''
+	export let warning_text: string = ''
+	export let error_text: string = ''
 	export let onReset: () => void
 
 	let id = guid()
 
-	$: if (errorText) {
-		blueprintSettingErrors.get()[label] = errorText
+	$: if (error_text) {
+		blueprintSettingErrors.get()[label] = error_text
+	}
+
+	function onQuestionMarkClick() {
+		Blockbench.showQuickMessage(tooltip, 50 * tooltip.length)
 	}
 </script>
 
-<div class="dialog_item_container">
-	<div class="base_dialog_item">
-		<div class="slot_container">
+<div>
+	<div class="base_dialog_item" title={tooltip}>
+		<div class="slot_container" style={tooltip ? 'margin-right: 4px' : ''}>
 			<slot {id} />
-
-			<div class="description">
-				{#if errorText}
-					<div class="error_text">
-						<i class="fa fa-exclamation-circle dialog_form_error text_icon" />
-						<div class="error_lines">
-							<!-- svelte-ignore missing-declaration -->
-							{@html pureMarked(errorText)}
-						</div>
-					</div>
-				{:else if warningText}
-					<div class="warning_text">
-						<i class="fa fa-exclamation-triangle dialog_form_warning text_icon" />
-						<!-- svelte-ignore missing-declaration -->
-						{@html pureMarked(warningText)}
-					</div>
-				{/if}
-				{#if tooltip}
-					<!-- svelte-ignore missing-declaration -->
-					{@html pureMarked(tooltip)}
-				{/if}
-			</div>
 		</div>
+		{#if tooltip}
+			<!-- svelte-ignore a11y-click-events-have-key-events -->
+			<i
+				class="fa fa-question dialog_form_description dialog-form-description"
+				on:click={onQuestionMarkClick}
+			/>
+		{:else}
+			<i
+				class="fa fa-question dialog_form_description dialog-form-description"
+				style="visibility: hidden"
+			/>
+		{/if}
 		<!-- svelte-ignore a11y-click-events-have-key-events -->
 		<i
 			on:click={onReset}
-			class="fa fa-rotate-left dialog_form_description dialog-form-description reset-button"
+			class="fa fa-trash-can dialog_form_description dialog-form-description reset-button"
 			title={translate('dialog.reset')}
 		/>
+	</div>
+	<div class="base_dialog_item">
+		{#if error_text}
+			<div class="error_text">
+				<i class="fa fa-exclamation-circle dialog_form_error text_icon" />
+				<div class="error_lines">
+					{#each error_text.split('\n') as text}
+						<div>{text}</div>
+					{/each}
+				</div>
+			</div>
+		{:else if warning_text}
+			<div class="warning_text">
+				<i class="fa fa-exclamation-triangle dialog_form_warning text_icon" />
+				<div class="warning_lines">
+					{#each warning_text.split('\n') as text}
+						<div>{text}</div>
+					{/each}
+				</div>
+			</div>
+		{/if}
 	</div>
 </div>
 
 <style>
-	.dialog_item_container {
-		margin: 0px 16px 8px;
-	}
 	.base_dialog_item {
 		display: flex;
 		flex-direction: row;
-	}
-	.base_dialog_item :global(label) {
-		--max_label_width: 200px !important;
+		/* align-items: center; */
+		justify-content: space-between;
 	}
 	.slot_container {
 		flex-grow: 1;
-		margin-right: 4px;
-		max-width: 96%;
-	}
-	.warning_text i {
-		font-size: 1.2em;
 	}
 	.warning_text {
 		display: flex;
 		align-items: center;
 		color: var(--color-warning);
 		font-family: var(--font-code);
-		margin: 0.75rem;
-		margin-top: 0;
+		font-size: 0.8em;
 	}
-	.description {
-		font-size: 0.9rem;
-		color: var(--color-subtle_text);
-		margin: 0 0.75rem;
+	.warning_lines {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
-	}
-	.description :global(li) {
-		list-style: circle;
-		margin-left: 1.5rem;
-	}
-	.error_text i {
-		font-size: 1.2em;
 	}
 	.error_text {
 		display: flex;
 		align-items: center;
 		color: var(--color-error);
 		font-family: var(--font-code);
-		margin: 0.75rem;
-		margin-top: 0;
+		font-size: 0.8em;
 	}
 	.error_lines {
 		display: flex;

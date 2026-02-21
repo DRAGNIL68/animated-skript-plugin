@@ -1,23 +1,20 @@
-import { fixClassPropertyInheritance } from 'src/util/property'
 import { makeNotZero } from '../util/misc'
 
-@fixClassPropertyInheritance
 export class ResizableOutlinerElement extends OutlinerElement {
-	type = 'resizable'
 	// Properties
-	name: string
-	position: ArrayVector3
-	rotation: ArrayVector3
-	scale: ArrayVector3
-	visibility: boolean
+	public name: string
+	public position: ArrayVector3
+	public rotation: ArrayVector3
+	public scale: ArrayVector3
+	public visibility: boolean
 	// eslint-disable-next-line @typescript-eslint/naming-convention
-	preview_controller = PREVIEW_CONTROLLER
+	public preview_controller = PREVIEW_CONTROLLER
 
 	// Transform flags
-	movable = true
-	rotatable = true
-	scalable = true
-	resizable = true
+	public movable = true
+	public rotatable = true
+	public scalable = true
+	public resizable = true
 
 	// Resizable Workaround properties
 	get from() {
@@ -47,6 +44,8 @@ export class ResizableOutlinerElement extends OutlinerElement {
 		this.rotation ??= [0, 0, 0]
 		this.scale ??= [1, 1, 1]
 		this.visibility ??= true
+
+		// this.sanitizeName()
 	}
 
 	get origin() {
@@ -55,15 +54,18 @@ export class ResizableOutlinerElement extends OutlinerElement {
 
 	getWorldCenter(): THREE.Vector3 {
 		Reusable.vec3.set(0, 0, 0)
-		// @ts-expect-error fastWorldPosition types are wrong
+		// @ts-ignore
 		return THREE.fastWorldPosition(this.mesh, Reusable.vec2).add(Reusable.vec3) as THREE.Vector3
 	}
 
-	extend(data: any) {
-		const properties = this.constructor.properties
-		for (const key in properties) {
-			properties[key]!.merge(this, data)
+	public extend(data: any) {
+		for (const key in ResizableOutlinerElement.properties) {
+			ResizableOutlinerElement.properties[key].merge(this, data)
 		}
+		if (data.visibility !== undefined) {
+			this.visibility = data.visibility
+		}
+
 		return this
 	}
 
@@ -91,7 +93,7 @@ export class ResizableOutlinerElement extends OutlinerElement {
 		// allowNegative: boolean,
 		// bidirectional: boolean
 	) {
-		let before = this.oldScale ?? this.size(axis)
+		let before = this.oldScale !== undefined ? this.oldScale : this.size(axis)
 		if (before instanceof Array) before = before[axis]
 		// For some unknown reason scale is not inverted on the y axis
 		const sign = before < 0 && axis !== 1 ? -1 : 1
@@ -103,21 +105,12 @@ export class ResizableOutlinerElement extends OutlinerElement {
 		this.preview_controller.updateGeometry?.(this)
 		this.preview_controller.updateTransform(this)
 	}
-
-	getSaveCopy() {
-		const save = super.getSaveCopy?.() ?? {}
-		save.uuid = this.uuid
-		save.type = this.type
-		return save
-	}
 }
 new Property(ResizableOutlinerElement, 'string', 'name', { default: 'resizable_outliner_element' })
 new Property(ResizableOutlinerElement, 'vector', 'position', { default: [0, 0, 0] })
 new Property(ResizableOutlinerElement, 'vector', 'rotation', { default: [0, 0, 0] })
 new Property(ResizableOutlinerElement, 'vector', 'scale', { default: [1, 1, 1] })
-new Property(ResizableOutlinerElement, 'boolean', 'visibility', { default: true })
-new Property(ResizableOutlinerElement, 'boolean', 'locked', { default: false })
-new Property(ResizableOutlinerElement, 'boolean', 'export', { default: true })
+new Property(ResizableOutlinerElement, 'string', 'visibility', { default: true })
 
 export const PREVIEW_CONTROLLER = new NodePreviewController(ResizableOutlinerElement, {
 	setup(el: ResizableOutlinerElement) {
@@ -132,9 +125,9 @@ export const PREVIEW_CONTROLLER = new NodePreviewController(ResizableOutlinerEle
 		Project!.nodes_3d[el.uuid] = mesh
 
 		el.preview_controller.updateGeometry?.(el)
+		// el.preview_controller.updateTransform(el)
 		el.preview_controller.dispatchEvent('setup', { element: el })
 	},
-
 	updateTransform(el: ResizableOutlinerElement) {
 		NodePreviewController.prototype.updateTransform.call(el.preview_controller, el)
 		if (el.mesh.fix_position) {
@@ -152,6 +145,7 @@ export const PREVIEW_CONTROLLER = new NodePreviewController(ResizableOutlinerEle
 			el.mesh.fix_scale.set(...el.scale)
 			makeNotZero(el.mesh.fix_scale)
 		}
+		// @ts-ignore
 		el.preview_controller.dispatchEvent('update_transform', { element: el })
 	},
 })

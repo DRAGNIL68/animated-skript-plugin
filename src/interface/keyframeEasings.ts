@@ -1,8 +1,10 @@
-import { registerMountSvelteComponentMod } from 'src/util/mountSvelteComponent'
 import KeyframeEasingsSvelte from '../components/keyframeEasings.svelte'
+import { injectSvelteCompomponentMod } from '../util/injectSvelteComponent'
 
-registerMountSvelteComponentMod({
-	id: 'animated-java:mounted-svelte/keyframe-easings',
+injectSvelteCompomponentMod({
 	component: KeyframeEasingsSvelte,
-	target: '#panel_keyframe',
+	props: {},
+	elementSelector() {
+		return $('#panel_keyframe')[0]
+	},
 })

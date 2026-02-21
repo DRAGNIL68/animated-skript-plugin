@@ -1,14 +1,12 @@
-import KofiPopup from 'src/components/kofiPopup.svelte'
-import { updateAllCubeOutlines } from 'src/mods/cube'
-import { SUPPORTED_MINECRAFT_VERSIONS } from 'src/systems/global'
-import BlueprintSettingsDialogSvelteComponent from '../../components/blueprintSettingsDialog.svelte'
 import { PACKAGE } from '../../constants'
-import { updateRotationConstraints } from '../../formats/blueprint'
-import { defaultValues, type ExportMode } from '../../formats/blueprint/settings'
-import { sanitizeStorageKey } from '../../util/minecraftUtil'
-import { Valuable } from '../../util/stores'
 import { SvelteDialog } from '../../util/svelteDialog'
+import { Valuable } from '../../util/stores'
+import BlueprintSettingsDialogSvelteComponent from '../../components/blueprintSettingsDialog.svelte'
+import { toSafeFuntionName } from '../../util/minecraftUtil'
+import { defaultValues, ExportMode } from '../../blueprintSettings'
 import { translate } from '../../util/translation'
+import { updateBoundingBox } from '../../blueprintFormat'
+import { MinecraftVersion } from '../../systems/datapackCompiler/mcbFiles'
 
 function getSettings() {
 	return {
@@ -20,17 +18,17 @@ function getSettings() {
 		}),
 		textureSizeX: new Valuable(Project!.texture_width),
 		textureSizeY: new Valuable(Project!.texture_height),
-		showRenderBox: new Valuable(Project!.animated_java.show_render_box),
-		autoRenderBox: new Valuable(Project!.animated_java.auto_render_box),
-		renderBoxX: new Valuable(Project!.animated_java.render_box[0]),
-		renderBoxY: new Valuable(Project!.animated_java.render_box[1]),
+		showBoundingBox: new Valuable(Project!.animated_java.show_bounding_box),
+		autoBoundingBox: new Valuable(Project!.animated_java.auto_bounding_box),
+		boundingBoxX: new Valuable(Project!.animated_java.bounding_box[0]),
+		boundingBoxY: new Valuable(Project!.animated_java.bounding_box[1]),
 		// Export Settings
 		enablePluginMode: new Valuable(Project!.animated_java.enable_plugin_mode),
 		exportNamespace: new Valuable(Project!.animated_java.export_namespace, value => {
 			if (!value) {
 				return defaultValues.export_namespace
 			}
-			return sanitizeStorageKey(value)
+			return toSafeFuntionName(value)
 		}),
 		resourcePackExportMode: new Valuable(
 			Project!.animated_java.resource_pack_export_mode as string
@@ -56,14 +54,13 @@ function getSettings() {
 			Project!.animated_java.enable_advanced_data_pack_settings
 		),
 		dataPack: new Valuable(Project!.animated_java.data_pack),
-		onSummonFunction: new Valuable(Project!.animated_java.on_summon_function),
-		onRemoveFunction: new Valuable(Project!.animated_java.on_remove_function),
-		onPreTickFunction: new Valuable(Project!.animated_java.on_pre_tick_function),
-		onPostTickFunction: new Valuable(Project!.animated_java.on_post_tick_function),
+		summonCommands: new Valuable(Project!.animated_java.summon_commands),
+		tickingCommands: new Valuable(Project!.animated_java.ticking_commands),
 		interpolationDuration: new Valuable(Project!.animated_java.interpolation_duration),
 		teleportationDuration: new Valuable(Project!.animated_java.teleportation_duration),
-		autoUpdateRigOrientation: new Valuable(Project!.animated_java.auto_update_rig_orientation),
 		useStorageForAnimation: new Valuable(Project!.animated_java.use_storage_for_animation),
+		showFunctionErrors: new Valuable(Project!.animated_java.show_function_errors),
+		showOutdatedWarning: new Valuable(Project!.animated_java.show_outdated_warning),
 		// Plugin Settings
 		bakedAnimations: new Valuable(Project!.animated_java.baked_animations),
 		jsonFile: new Valuable(Project!.animated_java.json_file),
@@ -76,9 +73,9 @@ function setSettings(settings: ReturnType<typeof getSettings>) {
 
 	setProjectResolution(settings.textureSizeX.get(), settings.textureSizeY.get(), true)
 
-	Project.animated_java.show_render_box = settings.showRenderBox.get()
-	Project.animated_java.auto_render_box = settings.autoRenderBox.get()
-	Project.animated_java.render_box = [settings.renderBoxX.get(), settings.renderBoxY.get()]
+	Project.animated_java.show_bounding_box = settings.showBoundingBox.get()
+	Project.animated_java.auto_bounding_box = settings.autoBoundingBox.get()
+	Project.animated_java.bounding_box = [settings.boundingBoxX.get(), settings.boundingBoxY.get()]
 
 	// Export Settings
 	Project.animated_java.enable_plugin_mode = settings.enablePluginMode.get()
@@ -88,7 +85,7 @@ function setSettings(settings: ReturnType<typeof getSettings>) {
 		settings.resourcePackExportMode.get() as ExportMode
 	Project.animated_java.data_pack_export_mode = settings.dataPackExportMode.get() as ExportMode
 	Project.animated_java.target_minecraft_version =
-		settings.targetMinecraftVersion.get() as SUPPORTED_MINECRAFT_VERSIONS
+		settings.targetMinecraftVersion.get() as MinecraftVersion
 	// Resource Pack Settings
 	Project.animated_java.display_item = settings.displayItem.get()
 	Project.animated_java.custom_model_data_offset = settings.customModelDataOffset.get()
@@ -99,14 +96,13 @@ function setSettings(settings: ReturnType<typeof getSettings>) {
 	Project.animated_java.enable_advanced_data_pack_settings =
 		settings.enableAdvancedDataPackSettings.get()
 	Project.animated_java.data_pack = settings.dataPack.get()
-	Project.animated_java.on_summon_function = settings.onSummonFunction.get()
-	Project.animated_java.on_remove_function = settings.onRemoveFunction.get()
-	Project.animated_java.on_pre_tick_function = settings.onPreTickFunction.get()
-	Project.animated_java.on_post_tick_function = settings.onPostTickFunction.get()
+	Project.animated_java.summon_commands = settings.summonCommands.get()
+	Project.animated_java.ticking_commands = settings.tickingCommands.get()
 	Project.animated_java.interpolation_duration = settings.interpolationDuration.get()
 	Project.animated_java.teleportation_duration = settings.teleportationDuration.get()
-	Project.animated_java.auto_update_rig_orientation = settings.autoUpdateRigOrientation.get()
 	Project.animated_java.use_storage_for_animation = settings.useStorageForAnimation.get()
+	Project.animated_java.show_function_errors = settings.showFunctionErrors.get()
+	Project.animated_java.show_outdated_warning = settings.showOutdatedWarning.get()
 	// Plugin Settings
 	Project.animated_java.baked_animations = settings.bakedAnimations.get()
 	Project.animated_java.json_file = settings.jsonFile.get()
@@ -117,26 +113,17 @@ export function openBlueprintSettingsDialog() {
 	if (!Project) return
 
 	const settings = getSettings()
+
 	return new SvelteDialog({
 		id: `${PACKAGE.name}:blueprintSettingsDialog`,
 		title: translate('dialog.blueprint_settings.title'),
-		width: 800,
-		content: {
-			component: BlueprintSettingsDialogSvelteComponent,
-			props: settings,
-		},
-		extra: {
-			component: KofiPopup,
-		},
-		contentStyle: {
-			marginTop: '10px',
-		},
+		width: 512,
+		component: BlueprintSettingsDialogSvelteComponent,
+		props: settings,
 		preventKeybinds: true,
 		onConfirm() {
 			setSettings(settings)
-			updateRotationConstraints()
-			updateAllCubeOutlines()
-			Canvas.updateAll()
+			updateBoundingBox()
 		},
 	}).show()
 }

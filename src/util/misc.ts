@@ -1,8 +1,28 @@
-import { type ComponentConstructorOptions } from 'svelte'
+import { BLUEPRINT_FORMAT } from '../blueprintFormat'
+
+import { ComponentConstructorOptions } from 'svelte'
 
 export type SvelteComponentConstructor<T, U extends ComponentConstructorOptions> = new (
 	options: U
 ) => T
+
+export function addProjectToRecentProjects(file: FileResult) {
+	if (!Project || !file.path) return
+	const name = pathToName(file.path, true)
+	if (file.path && isApp && !file.no_file) {
+		const project = Project
+		Project.save_path = file.path
+		Project.name = pathToName(name, false)
+		addRecentProject({
+			name,
+			path: file.path,
+			icon: BLUEPRINT_FORMAT.icon,
+		})
+		setTimeout(() => {
+			if (Project === project) void updateRecentProjectThumbnail()
+		}, 200)
+	}
+}
 
 /**
  * Rounds a number to a certain number of decimal places
@@ -16,6 +36,17 @@ export function roundTo(n: number, d: number) {
  */
 export function roundToNth(n: number, x: number) {
 	return Math.round(n * x) / x
+}
+
+export function floatToHex(n: number) {
+	return Number((255 * n).toFixed(0))
+		.toString(16)
+		.padStart(2, '0')
+}
+
+export function tinycolorToDecimal(color: InstanceType<typeof tinycolor>) {
+	const rgba = color.toRgb()
+	return ((rgba.a * 255) << 24) | (rgba.r << 16) | (rgba.g << 8) | rgba.b
 }
 
 export function makeNotZero(vec: THREE.Vector3 | THREE.Euler) {
@@ -32,11 +63,11 @@ export function scrubUndefined<T extends Record<string, any>>(obj: T) {
 			scrubUndefined(obj[key])
 		}
 	}
-	return obj as { [K in keyof T]: Exclude<T[K], undefined> }
+	return obj
 }
 
 // Developed by FetchBot 💖
-interface LLNode {
+type LLNode = {
 	parent?: LLNode
 	name: string
 }

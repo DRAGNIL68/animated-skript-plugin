@@ -1,46 +1,50 @@
 <script lang="ts" context="module">
+	import { Valuable } from '../../util/stores'
+	import {
+		getKeyframeCommands,
+		getKeyframeRepeat,
+		getKeyframeRepeatFrequency,
+		setKeyframeCommands,
+		setKeyframeRepeat,
+		setKeyframeRepeatFrequency,
+	} from '../../mods/customKeyframesMod'
 	import { translate } from '../../util/translation'
-	import CustomCodeJar from '../customCodeJar.svelte'
 </script>
 
 <script lang="ts">
-	export let keyframe: _Keyframe
+	export let selectedKeyframe: _Keyframe
 
-	let func = keyframe?.function ?? ''
-	let executeCondition = keyframe?.execute_condition ?? ''
-	let repeat = keyframe?.repeat ?? false
-	let repeatFrequency = keyframe?.repeat_frequency ?? 1
+	const commands = new Valuable<string>(getKeyframeCommands(selectedKeyframe) || '')
+	const repeat = new Valuable<boolean>(getKeyframeRepeat(selectedKeyframe) || false)
+	const repeatFrequency = new Valuable<number>(getKeyframeRepeatFrequency(selectedKeyframe) || 1)
 
-	$: {
-		keyframe.function = func
-		keyframe.execute_condition = executeCondition
-		keyframe.repeat = repeat
-		keyframe.repeat_frequency = repeatFrequency
-	}
+	commands.subscribe(value => {
+		setKeyframeCommands(selectedKeyframe, value)
+	})
+	repeat.subscribe(value => {
+		setKeyframeRepeat(selectedKeyframe, value)
+	})
+	repeatFrequency.subscribe(value => {
+		if (value < 1) value = 1
+		repeatFrequency.set(value)
+		setKeyframeRepeatFrequency(selectedKeyframe, value)
+	})
 </script>
 
-<div class="bar flex custom-bar">
+<div class="bar flex">
 	<label
 		for="commands_input"
 		class="undefined"
 		style="font-weight: unset;"
-		title={translate('panel.keyframe.function.description')}
+		title={translate('panel.keyframe.commands.description')}
 	>
-		{translate('panel.keyframe.function.title')}
+		{translate('panel.keyframe.commands.title')}
 	</label>
-	<CustomCodeJar bind:value={func} placeholder={'say Hello, World!'} />
-</div>
-
-<div class="bar flex custom-bar">
-	<label
-		for="execute_condition"
-		class="undefined"
-		style="font-weight: unset;"
-		title={translate('panel.keyframe.execute_condition.description')}
-	>
-		{translate('panel.keyframe.execute_condition.title')}
-	</label>
-	<CustomCodeJar bind:value={executeCondition} placeholder={'if score @s matches 1..'} />
+	<textarea
+		id="commands_input"
+		class="dark_bordered code keyframe_input tab_target"
+		bind:value={$commands}
+	/>
 </div>
 
 <div class="bar flex">
@@ -56,32 +60,33 @@
 		id="repeat_input"
 		class="dark_bordered tab_target"
 		type="checkbox"
-		bind:checked={repeat}
+		bind:checked={$repeat}
 	/>
 </div>
 
-{#if keyframe?.repeat}
-	<div class="bar flex">
-		<label
-			for="repeat_frequency_input"
-			class="undefined"
-			style="font-weight: unset;"
-			title={translate('animated_java.panel.keyframe.repeat_frequency.description')}
-		>
-			{translate('panel.keyframe.repeat_frequency.title')}
-		</label>
-		<input
-			id="repeat_frequency_input"
-			class="dark_bordered tab_target"
-			type="number"
-			bind:value={repeatFrequency}
-		/>
-	</div>
-{/if}
+<div class="bar flex">
+	<label
+		for="repeat_frequency_input"
+		class="undefined"
+		style="font-weight: unset;"
+		title={translate('animated_java.panel.keyframe.repeat_frequency.description')}
+	>
+		{translate('panel.keyframe.repeat_frequency.title')}
+	</label>
+	<input
+		id="repeat_frequency_input"
+		class="dark_bordered tab_target"
+		type="number"
+		bind:value={$repeatFrequency}
+	/>
+</div>
 
 <style>
-	.custom-bar {
-		flex-direction: column;
+	textarea {
+		min-height: 90px;
+		height: 30px;
+		resize: vertical;
+		text-wrap: nowrap;
 	}
 	input[type='checkbox'] {
 		display: flex;

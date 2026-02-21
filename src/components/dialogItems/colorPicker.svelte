@@ -5,32 +5,28 @@
 	import BaseDialogItem from './baseDialogItem.svelte'
 
 	export let label: string
-	export let tooltip = ''
-	export let defaultValue = '#ffffff'
+	export let tooltip: string = ''
 	export let value: Valuable<string>
 
 	let colorPicker = new ColorPicker(`${PACKAGE.name}:${label}-color_picker`, {
 		onChange() {
+			// @ts-ignore
 			const color = colorPicker.get() as tinycolor.Instance
-			$value = color.toHexString()
+			value.set(color.toHexString())
 		},
 	})
+	let colorPickerMount: HTMLDivElement
 
-	function mountColorPicker(el: HTMLDivElement) {
+	function onLoad(el: HTMLDivElement) {
 		colorPicker.toElement(el)
-		colorPicker.set($value)
+		colorPicker.set(value.get())
 	}
 
 	function onReset() {
-		$value = defaultValue
+		value.set('#ffffff')
 	}
 
-	const unsub = value.subscribe(v => {
-		colorPicker.set(v)
-	})
-
 	onDestroy(() => {
-		unsub()
 		colorPicker.delete()
 	})
 </script>
@@ -38,6 +34,6 @@
 <BaseDialogItem {label} {tooltip} {onReset} let:id>
 	<div class="dialog_bar form_bar">
 		<label class="name_space_left" for={id}>{label}</label>
-		<div use:mountColorPicker />
+		<div bind:this={colorPickerMount} use:onLoad />
 	</div>
 </BaseDialogItem>

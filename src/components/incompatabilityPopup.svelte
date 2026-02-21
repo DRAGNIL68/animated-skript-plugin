@@ -4,10 +4,13 @@
 
 	export let plugins: BBPlugin[]
 
+	let disabledPlugins: BBPlugin[] = []
+
 	function disablePlugin(plugin: BBPlugin) {
 		plugin.toggleDisabled()
 		plugins.remove(plugin)
-		plugins = [...plugins]
+		disabledPlugins.push(plugin)
+		disabledPlugins = disabledPlugins
 		if (plugins.length === 0) {
 			closeIncompatabilityPopup()
 		}
@@ -19,36 +22,33 @@
 </p>
 <ul>
 	{#each plugins as plugin}
-		{#if !plugin.disabled}
-			<li>
-				{#if plugin.hasImageIcon()}
-					<img src={plugin.getIcon()} alt="" />
+		<li>
+			{#if plugin.hasImageIcon()}
+				<img src={plugin.getIcon()} alt="" />
+			{/if}
+			{plugin.title}
+			{#key disabledPlugins}
+				{#if !disabledPlugins.includes(plugin)}
+					<button on:click={() => disablePlugin(plugin)}>
+						<i class="material-icons icon">bedtime</i>
+						{translate('popup.incompatability_popup.disable_button')}
+					</button>
 				{/if}
-				{plugin.title}
-				<button on:click={() => disablePlugin(plugin)}>
-					<i class="material-icons icon">bedtime</i>
-					<!-- svelte-ignore missing-declaration -->
-					{tl('dialog.plugins.disable')}
-				</button>
-			</li>
-		{/if}
+			{/key}
+		</li>
 	{/each}
 </ul>
 
 <style>
 	ul {
-		display: flex;
-		flex-direction: column;
-		margin-top: 1rem;
-		gap: 0.75rem;
+		margin-top: 1em;
 	}
 	li {
 		display: flex;
 		align-items: center;
 		justify-content: flex-start;
 		font-size: 24px;
-		background: var(--color-back);
-		padding: 12px;
+		margin-bottom: 16px;
 	}
 	img {
 		width: 64px;
@@ -62,7 +62,6 @@
 		flex-direction: column;
 		align-items: center;
 		justify-content: center;
-		min-width: unset;
 	}
 	i {
 		font-size: 32px;

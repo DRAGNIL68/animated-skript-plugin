@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/prefer-for-of */
-/* eslint-disable @typescript-eslint/naming-convention */
 const {
 	BufferAttribute,
 	BufferGeometry,
@@ -14,7 +12,7 @@ const {
 } = THREE
 
 function computeMikkTSpaceTangents(geometry: any, MikkTSpace: any, negateSign = true) {
-	if (!MikkTSpace?.isReady) {
+	if (!MikkTSpace || !MikkTSpace.isReady) {
 		throw new Error('BufferGeometryUtils: Initialized MikkTSpace library required.')
 	}
 
@@ -329,7 +327,7 @@ function mergeAttributes(attributes: any) {
 			for (let j = 0, l = attribute.count; j < l; j++) {
 				for (let c = 0; c < itemSize; c++) {
 					const value = attribute.getComponent(j, c)
-					// @ts-expect-error No types
+					// @ts-ignore
 					result.setComponent(j + tupleOffset, c, value)
 				}
 			}
@@ -341,7 +339,7 @@ function mergeAttributes(attributes: any) {
 	}
 
 	if (gpuType !== undefined) {
-		// @ts-expect-error No types
+		// @ts-ignore
 		result.gpuType = gpuType
 	}
 
@@ -358,10 +356,10 @@ export function deepCloneAttribute(attribute: any) {
 	}
 
 	if (attribute.isInstancedBufferAttribute) {
-		// @ts-expect-error No types
+		// @ts-ignore
 		return new InstancedBufferAttribute().copy(attribute)
 	}
-	// @ts-expect-error No types
+	// @ts-ignore
 	return new BufferAttribute().copy(attribute)
 }
 
@@ -415,7 +413,7 @@ function interleaveAttributes(attributes: any) {
 		// at the appropriate offset
 		for (let c = 0; c < count; c++) {
 			for (let k = 0; k < itemSize; k++) {
-				// @ts-expect-error No types
+				// @ts-ignore
 				iba[setters[k]](c, attribute[getters[k]](c))
 			}
 		}
@@ -551,7 +549,7 @@ function mergeVertices(geometry: any, tolerance = 1e-4) {
 
 		const morphAttributes = geometry.morphAttributes[name]
 		if (morphAttributes) {
-			tmpMorphAttributes[name] ??= []
+			if (!tmpMorphAttributes[name]) tmpMorphAttributes[name] = []
 			morphAttributes.forEach((morphAttr: any, i: any) => {
 				const array = new morphAttr.array.constructor(morphAttr.count * morphAttr.itemSize)
 				tmpMorphAttributes[name][i] = new morphAttr.constructor(
@@ -1179,13 +1177,13 @@ function toCreasedNormals(geometry: any, creaseAngle = Math.PI / 3 /* 60 degrees
 
 export {
 	computeMikkTSpaceTangents,
-	computeMorphedAttributes,
-	estimateBytesUsed,
-	interleaveAttributes,
-	mergeAttributes,
 	mergeGeometries,
-	mergeGroups,
+	mergeAttributes,
+	interleaveAttributes,
+	estimateBytesUsed,
 	mergeVertices,
-	toCreasedNormals,
 	toTrianglesDrawMode,
+	computeMorphedAttributes,
+	mergeGroups,
+	toCreasedNormals,
 }

@@ -2,14 +2,20 @@
 /// <reference path="D:/github-repos/snavesutit/blockbench-types/types/index.d.ts"/>
 /// <reference path="../global.d.ts"/>
 
-import type { IBlueprintDisplayEntityConfigJSON } from '../formats/blueprint'
-import { type defaultValues } from '../formats/blueprint/settings'
-import type { EasingKey } from '../util/easing'
+import type { IBlueprintBoneConfigJSON } from '../blueprintFormat'
+import { type defaultValues } from '../blueprintSettings'
+import {
+	getKeyframeCommands,
+	getKeyframeExecuteCondition,
+	getKeyframeRepeat,
+	getKeyframeRepeatFrequency,
+	getKeyframeVariant,
+} from '../mods/customKeyframesMod'
+import { EasingKey } from '../util/easing'
 import { resolvePath } from '../util/fileUtil'
 import { detectCircularReferences, mapObjEntries, scrubUndefined } from '../util/misc'
 import { Variant } from '../variants'
 import type { INodeTransform, IRenderedAnimation, IRenderedFrame } from './animationRenderer'
-import { JsonText } from './jsonText'
 import type {
 	AnyRenderedNode,
 	IRenderedModel,
@@ -35,30 +41,23 @@ type ExportedNodetransform = Omit<
 }
 type ExportedRenderedNode = Omit<
 	AnyRenderedNode,
-	| 'node'
-	| 'parentNode'
-	| 'model'
-	| 'boundingBox'
-	| 'configs'
-	| 'baseScale'
-	| 'path_name'
-	| 'storage_name'
+	'node' | 'parentNode' | 'model' | 'boundingBox' | 'configs' | 'baseScale' | 'safe_name'
 > & {
 	default_transform: ExportedNodetransform
 	bounding_box?: { min: ArrayVector3; max: ArrayVector3 }
-	configs?: Record<string, IBlueprintDisplayEntityConfigJSON>
+	configs?: Record<string, IBlueprintBoneConfigJSON>
 }
 type ExportedAnimationFrame = Omit<IRenderedFrame, 'nodes' | 'node_transforms'> & {
 	node_transforms: Record<string, ExportedNodetransform>
 }
 type ExportedBakedAnimation = Omit<
 	IRenderedAnimation,
-	'uuid' | 'frames' | 'modified_nodes' | 'path_name' | 'storage_name'
+	'uuid' | 'frames' | 'modified_nodes' | 'safe_name'
 > & {
 	frames: ExportedAnimationFrame[]
 	modified_nodes: string[]
 }
-interface ExportedKeyframe {
+type ExportedKeyframe = {
 	time: number
 	channel: string
 	value?: [string, string, string]
@@ -90,7 +89,7 @@ interface ExportedKeyframe {
 	repeat_frequency?: number
 }
 type ExportedAnimator = ExportedKeyframe[]
-interface ExportedDynamicAnimation {
+type ExportedDynamicAnimation = {
 	name: string
 	loop_mode: 'once' | 'hold' | 'loop'
 	duration: number
@@ -121,7 +120,7 @@ export interface IExportedJSON {
 	 */
 	settings: {
 		export_namespace: (typeof defaultValues)['export_namespace']
-		bounding_box: (typeof defaultValues)['render_box']
+		bounding_box: (typeof defaultValues)['bounding_box']
 		// Resource Pack Settings
 		custom_model_data_offset: (typeof defaultValues)['custom_model_data_offset']
 		// Plugin Settings
@@ -142,15 +141,15 @@ function transferKey(obj: any, oldKey: string, newKey: string) {
 }
 
 function serailizeKeyframe(kf: _Keyframe): ExportedKeyframe {
-	const json: ExportedKeyframe = scrubUndefined({
+	const json = {
 		time: kf.time,
 		channel: kf.channel,
-		commands: kf.function,
-		variant: kf.variant?.uuid,
-		execute_condition: kf.execute_condition,
-		repeat: kf.repeat,
-		repeat_frequency: kf.repeat_frequency,
-	})
+		commands: getKeyframeCommands(kf),
+		variant: getKeyframeVariant(kf),
+		execute_condition: getKeyframeExecuteCondition(kf),
+		repeat: getKeyframeRepeat(kf),
+		repeat_frequency: getKeyframeRepeatFrequency(kf),
+	} as ExportedKeyframe
 
 	switch (json.channel) {
 		case 'variant':
@@ -238,7 +237,7 @@ export function exportJSON(options: {
 	const json: IExportedJSON = {
 		settings: {
 			export_namespace: aj.export_namespace,
-			bounding_box: aj.render_box,
+			bounding_box: aj.bounding_box,
 			custom_model_data_offset: aj.custom_model_data_offset,
 			baked_animations: aj.baked_animations,
 		},
@@ -307,8 +306,8 @@ function serailizeNodeTransform(node: INodeTransform): ExportedNodetransform {
 		head_rot: node.head_rot,
 		scale: node.scale,
 		interpolation: node.interpolation,
-		function: node.function,
-		function_execute_condition: node.function_execute_condition,
+		commands: node.commands,
+		execute_condition: node.execute_condition,
 	}
 	return json
 }
@@ -317,8 +316,7 @@ function serailizeRenderedNode(node: AnyRenderedNode): ExportedRenderedNode {
 	const json: any = { ...node }
 	delete json.node
 	delete json.parentNode
-	delete json.path_name
-	delete json.storage_name
+	delete json.safe_name
 	delete json.model
 	transferKey(json, 'lineWidth', 'line_width')
 	transferKey(json, 'backgroundColor', 'background_color')
@@ -341,7 +339,7 @@ function serailizeRenderedNode(node: AnyRenderedNode): ExportedRenderedNode {
 			break
 		}
 		case 'text_display': {
-			json.text = new JsonText(node.text).toJSON()
+			json.text = node.text?.toJSON()
 			break
 		}
 	}

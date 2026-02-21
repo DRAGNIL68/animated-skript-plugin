@@ -1,17 +1,13 @@
 import * as pathjs from 'path'
-import { assetsLoaded } from 'src/systems/minecraft/assetManager'
-import { validateBlockState } from 'src/systems/minecraft/blockModelManager'
-import { MINECRAFT_REGISTRY } from 'src/systems/minecraft/registryManager'
-import { getCurrentVersion } from 'src/systems/minecraft/versionManager'
-import { SUPPORTED_MINECRAFT_VERSIONS } from '../systems/global'
 import {
 	BlockStateRegistryEntry,
-	type BlockStateValue,
+	BlockStateValue,
 	getBlockState,
 } from '../systems/minecraft/blockstateManager'
+import { MinecraftVersion } from '../systems/datapackCompiler/mcbFiles'
 
 export interface IMinecraftResourceLocation {
-	packRoot: string
+	resourcePackRoot: string
 	namespace: string
 	resourcePath: string
 	resourceLocation: string
@@ -21,30 +17,11 @@ export interface IMinecraftResourceLocation {
 	type: string
 }
 
-const CHARACTERS = 'abcdefghijklmnopqrstuvwxyz0123456789'
-const SMALL_CAPS_CHARACTERS = 'ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘꞯʀꜱᴛᴜᴠᴡxʏᴢ⁰¹²³⁴⁵⁶⁷⁸⁹'
-
-export function toSmallCaps(str: string): string {
-	let result = ''
-	for (const char of str) {
-		const index = CHARACTERS.indexOf(char.toLowerCase())
-		if (index !== -1) {
-			result += SMALL_CAPS_CHARACTERS[index]
-		} else {
-			result += char
-		}
-	}
-	return result
-}
-
-/**
- * Return a sanitized version of {@param str} that is safe to use as a storage object key.
- *
- * Storage names can only contain lowercase letters, numbers, and underscores.
- * All other characters are replaced with underscores.
- */
-export function sanitizeStorageKey(str: string): string {
-	return str.toLowerCase().replace(/[^a-z0-9_]+/g, '_')
+export function toSafeFuntionName(name: string): string {
+	return name
+		.toLowerCase()
+		.replace(/[^a-z0-9_\\.]/g, '_')
+		.replace(/_+/g, '_')
 }
 
 /**
@@ -67,7 +44,7 @@ export function getPathFromResourceLocation(resourceLocation: string, type: stri
 
 export function isResourcePackPath(path: string) {
 	const parsed = parseResourcePackPath(path)
-	return !!(parsed?.namespace && parsed.resourcePath)
+	return !!(parsed && parsed.namespace && parsed.resourcePath)
 }
 
 export function parseResourcePackPath(path: string): IMinecraftResourceLocation | undefined {
@@ -77,7 +54,7 @@ export function parseResourcePackPath(path: string): IMinecraftResourceLocation 
 	const assetsIndex = parts.indexOf('assets')
 	if (assetsIndex === -1) return undefined
 
-	const packRoot = parts.slice(0, assetsIndex).join('/')
+	const resourcePackRoot = parts.slice(0, assetsIndex).join('/')
 	const namespace = parts[assetsIndex + 1]
 	const type = parts[assetsIndex + 2]
 	const resourcePath = parts.slice(assetsIndex + 3, -1).join('/')
@@ -90,7 +67,7 @@ export function parseResourcePackPath(path: string): IMinecraftResourceLocation 
 	const subtypelessPath = parts.slice(assetsIndex + 4).join('/')
 
 	return {
-		packRoot,
+		resourcePackRoot,
 		namespace,
 		resourcePath,
 		resourceLocation,
@@ -110,11 +87,9 @@ export function parseResourceLocation(resourceLocation: string) {
 	const path = parts.join('')
 	const resourceType = path.split('/')[0]
 	const parsed = PathModule.parse(path)
-	const fullPath = PathModule.join(namespace, path)
 	return {
 		namespace,
 		path,
-		fullPath,
 		type: resourceType,
 		dir: parsed.dir,
 		name: parsed.name,
@@ -123,7 +98,7 @@ export function parseResourceLocation(resourceLocation: string) {
 
 export function isDataPackPath(path: string) {
 	const parsed = parseDataPackPath(path)
-	return !!(parsed?.namespace && parsed.resourcePath)
+	return !!(parsed && parsed.namespace && parsed.resourcePath)
 }
 
 export function parseDataPackPath(path: string): IMinecraftResourceLocation | undefined {
@@ -133,7 +108,7 @@ export function parseDataPackPath(path: string): IMinecraftResourceLocation | un
 	const assetsIndex = parts.indexOf('data')
 	if (assetsIndex === -1) return undefined
 
-	const packRoot = parts.slice(0, assetsIndex).join('/')
+	const resourcePackRoot = parts.slice(0, assetsIndex).join('/')
 	const namespace = parts[assetsIndex + 1]
 	const type = parts[assetsIndex + 2]
 	let resourcePath: string
@@ -154,7 +129,7 @@ export function parseDataPackPath(path: string): IMinecraftResourceLocation | un
 	const subtypelessPath = parts.slice(assetsIndex + 4).join('/')
 
 	return {
-		packRoot,
+		resourcePackRoot,
 		namespace,
 		resourcePath,
 		resourceLocation,
@@ -165,74 +140,28 @@ export function parseDataPackPath(path: string): IMinecraftResourceLocation | un
 	}
 }
 
-export interface FunctionTagJSON {
+export interface IFunctionTag {
 	replace?: boolean
 	values: Array<string | { id: string; required?: boolean }>
 }
 
-type TagEntry = string | { id: string; required?: boolean }
-
-export class DataPackTag {
-	replace = false
-	values: Array<string | { id: string; required?: boolean }> = []
-
-	has(entry: TagEntry) {
-		const id = DataPackTag.getEntryId(entry)
-		return this.values.some(v => DataPackTag.getEntryId(v) === id)
-	}
-
-	add(value: TagEntry) {
-		const existingEntry = this.get(value)
-		if (existingEntry) return
-		this.values.push(value)
-	}
-
-	get(value: TagEntry) {
-		const id = DataPackTag.getEntryId(value)
-		return this.values.find(v => DataPackTag.getEntryId(v) === id)
-	}
-
-	filter(predicate: (value: TagEntry, index: number, array: TagEntry[]) => boolean) {
-		this.values = this.values.filter(predicate)
-		return this
-	}
-
-	merge(other: DataPackTag) {
-		this.replace = other.replace
-
-		for (const value of other.values) {
-			this.add(value)
+export function mergeTag(oldTag: IFunctionTag, newTag: IFunctionTag): IFunctionTag {
+	oldTag.values.forEach(value => {
+		if (typeof value === 'string') {
+			if (!newTag.values.some(v => (typeof v === 'object' ? v.id === value : v === value))) {
+				newTag.values.push(value)
+			}
+		} else {
+			if (
+				!newTag.values.some(v =>
+					typeof v === 'object' ? v.id === value.id : v === value.id
+				)
+			) {
+				newTag.values.push(value)
+			}
 		}
-
-		return this
-	}
-
-	sort() {
-		this.values.sort((a, b) => {
-			const idA = DataPackTag.getEntryId(a)
-			const idB = DataPackTag.getEntryId(b)
-			if (idA === 'animated_java:global/on_tick') return 1
-			if (idB === 'animated_java:global/on_tick') return -1
-			return idA.localeCompare(idB, 'en')
-		})
-
-		return this
-	}
-
-	static getEntryId(entry: TagEntry) {
-		return typeof entry === 'string' ? entry : entry.id
-	}
-
-	static fromJSON(json: FunctionTagJSON) {
-		const tag = new DataPackTag()
-		if (typeof json.replace === 'boolean') tag.replace = json.replace
-		if (Array.isArray(json.values)) tag.values = structuredClone(json.values)
-		return tag
-	}
-
-	toJSON(): FunctionTagJSON {
-		return { replace: this.replace, values: structuredClone(this.values) }
-	}
+	})
+	return newTag
 }
 
 export function resolveBlockstateValueType(
@@ -265,42 +194,10 @@ export interface IParsedBlock {
 	blockStateRegistryEntry: BlockStateRegistryEntry | undefined
 }
 
-export async function validateItem(item: string) {
-	if (!MINECRAFT_REGISTRY.item) {
-		await assetsLoaded()
-		return
-	}
-	let [namespace, id] = item.split(':')
-	if (!id) {
-		id = namespace
-		namespace = 'minecraft'
-	}
-	if ((namespace === 'minecraft' || namespace === '') && MINECRAFT_REGISTRY.item.has(id)) {
-		return ''
-	} else {
-		return `This item does not exist in Minecraft ${getCurrentVersion()!.id}.`
-	}
-}
-
-export async function validateBlock(block: string) {
-	if (!MINECRAFT_REGISTRY.block) await assetsLoaded()
-	const parsed = await parseBlock(block)
-	if (!parsed) {
-		return 'Invalid block ID.'
-	} else if (
-		(parsed.resource.namespace === 'minecraft' || parsed.resource.namespace === '') &&
-		MINECRAFT_REGISTRY.block.has(parsed.resource.name)
-	) {
-		return validateBlockState(parsed)
-	} else {
-		return `This block does not exist in Minecraft ${getCurrentVersion()!.id}.`
-	}
-}
-
 export async function parseBlock(block: string): Promise<IParsedBlock | undefined> {
 	const states: Record<string, ReturnType<typeof resolveBlockstateValueType>> = {}
 	if (block.includes('[')) {
-		const match = /(.+?)\[((?:[^,=[\]]+=[^,=[\]]+,?)+)?]/.exec(block)
+		const match = block.match(/(.+?)\[((?:[^,=[\]]+=[^,=[\]]+,?)+)?]/)
 		if (!match) return
 		if (match[2] !== undefined) {
 			const args = match[2].split(',')
@@ -321,81 +218,19 @@ export async function parseBlock(block: string): Promise<IParsedBlock | undefine
 	}
 }
 
-export function sortMCVersions(
-	versions: SUPPORTED_MINECRAFT_VERSIONS[]
-): SUPPORTED_MINECRAFT_VERSIONS[] {
-	return versions.sort((a, b) => {
-		return compareVersions(a, b) ? -1 : 1
-	})
-}
-
-export function getDataPackFormat(version: SUPPORTED_MINECRAFT_VERSIONS): number {
+export function getDataPackFormat(version: MinecraftVersion): number {
 	switch (version) {
-		case SUPPORTED_MINECRAFT_VERSIONS['1.20.4']:
+		case '1.20.4':
 			return 26
-		case SUPPORTED_MINECRAFT_VERSIONS['1.20.5']:
+		case '1.20.5':
 			return 41
-		case SUPPORTED_MINECRAFT_VERSIONS['1.21.2']:
+		case '1.21.0':
+			return 48
+		case '1.21.2':
 			return 57
-		case SUPPORTED_MINECRAFT_VERSIONS['1.21.4']:
+		case '1.21.4':
 			return 61
-		case SUPPORTED_MINECRAFT_VERSIONS['1.21.5']:
-			return 71
-		case SUPPORTED_MINECRAFT_VERSIONS['1.21.6']:
-			return 80
-		case SUPPORTED_MINECRAFT_VERSIONS['1.21.9']:
-			return 88.0
 		default:
-			console.warn(`Unknown Minecraft version: ${version}`)
 			return Infinity
 	}
-}
-
-export function getResourcePackFormat(version: SUPPORTED_MINECRAFT_VERSIONS): number {
-	switch (version) {
-		case SUPPORTED_MINECRAFT_VERSIONS['1.20.4']:
-			return 22
-		case SUPPORTED_MINECRAFT_VERSIONS['1.20.5']:
-			return 32
-		case SUPPORTED_MINECRAFT_VERSIONS['1.21.2']:
-			return 42
-		case SUPPORTED_MINECRAFT_VERSIONS['1.21.4']:
-			return 46
-		case SUPPORTED_MINECRAFT_VERSIONS['1.21.5']:
-			return 55
-		case SUPPORTED_MINECRAFT_VERSIONS['1.21.6']:
-			return 63
-		case SUPPORTED_MINECRAFT_VERSIONS['1.21.9']:
-			return 69.0
-		default:
-			console.warn(`Unknown Minecraft version: ${version}`)
-			return Infinity
-	}
-}
-
-export function getNextSupportedVersion(
-	version: SUPPORTED_MINECRAFT_VERSIONS
-): SUPPORTED_MINECRAFT_VERSIONS | undefined {
-	const versions = Object.values(SUPPORTED_MINECRAFT_VERSIONS)
-	const index = versions.indexOf(version)
-	if (index === -1 || index === versions.length - 1) return undefined
-	return versions[index + 1]
-}
-
-export function functionReferenceExists(dataPackRoot: string, resourceLocation: string): boolean {
-	const parsed = parseResourceLocation(resourceLocation)
-	if (!parsed) return false
-	if (parsed.type !== 'tags' && parsed.type !== 'function' && parsed.type !== 'functions')
-		return false
-
-	for (const folder of fs.readdirSync(dataPackRoot)) {
-		const dataFolder = PathModule.join(dataPackRoot, folder)
-		if (!fs.statSync(dataFolder).isDirectory()) continue
-
-		const path = PathModule.join(dataFolder, parsed.fullPath)
-		if (!fs.existsSync(path)) continue
-		return true
-	}
-
-	return false
 }

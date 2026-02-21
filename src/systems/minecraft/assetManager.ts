@@ -1,19 +1,16 @@
 import { PACKAGE } from '../../constants'
-import EVENTS from '../../util/events'
 import { getCurrentVersion, getLatestVersion } from './versionManager'
+import { events } from '../../util/events'
 
-import download from 'download'
-import type { Unzipped } from 'fflate'
 import index from '../../assets/vanillaAssetOverrides/index.json'
-
+import { Unzipped } from 'fflate'
+import { unzip } from '../util'
+import download from 'download'
 import {
-	hideLoadingPopup,
-	showLoadingPopup,
 	showOfflineError,
 	updateLoadingProgress,
 	updateLoadingProgressLabel,
 } from '../../interface/popup/animatedJavaLoading'
-import { unzip } from '../util'
 const ASSET_OVERRIDES = index as unknown as Record<string, string>
 
 async function downloadJar(url: string, savePath: string) {
@@ -32,7 +29,7 @@ async function downloadJar(url: string, savePath: string) {
 		throw new Error('Failed to download Minecraft client after 3 retries.')
 	}
 
-	await fs.promises.writeFile(savePath, new Uint8Array(data))
+	await fs.promises.writeFile(savePath, data)
 }
 
 export async function getLatestVersionClientDownloadUrl() {
@@ -47,7 +44,7 @@ export async function getLatestVersionClientDownloadUrl() {
 		} catch (error) {
 			console.error('Failed to fetch latest Minecraft version API:', error)
 		}
-		if (response?.ok) {
+		if (response && response.ok) {
 			const result = await response.json()
 			if (!result?.downloads?.client) {
 				throw new Error(`Failed to find client download for ${version.id}`)
@@ -102,16 +99,14 @@ export async function checkForAssetsUpdate() {
 	await extractAssets()
 	console.log('Minecraft assets are up to date!')
 	localStorage.setItem('assetsLoaded', 'true')
-	requestAnimationFrame(() => EVENTS.MINECRAFT_ASSETS_LOADED.publish())
+	requestAnimationFrame(() => events.MINECRAFT_ASSETS_LOADED.dispatch())
 }
 
 let loadedAssets: Unzipped | undefined
 export async function extractAssets() {
 	const cachedJarFilePath = getCachedJarFilePath()
 
-	const data = await fs.promises.readFile(cachedJarFilePath)
-
-	loadedAssets = await unzip(new Uint8Array(data), {
+	loadedAssets = await unzip(new Uint8Array(await fs.promises.readFile(cachedJarFilePath)), {
 		filter: v => v.name.startsWith('assets/'),
 	})
 }
@@ -121,7 +116,7 @@ export async function assetsLoaded() {
 		if (loadedAssets !== undefined) {
 			resolve()
 		} else {
-			EVENTS.MINECRAFT_ASSETS_LOADED.subscribe(() => resolve(), true)
+			events.MINECRAFT_ASSETS_LOADED.subscribe(() => resolve(), true)
 		}
 	})
 }
@@ -131,58 +126,30 @@ export function hasAsset(path: string) {
 	return !!loadedAssets[path]
 }
 
-export function getRawAsset(path: string): Buffer {
+export function getRawAsset(path: string) {
 	if (!loadedAssets) throw new Error('Assets not loaded')
 
 	if (ASSET_OVERRIDES[path]) {
-		return Buffer.from(ASSET_OVERRIDES[path])
+		if (path.endsWith('.png')) {
+			return Buffer.from(ASSET_OVERRIDES[path], 'base64')
+		}
+		return ASSET_OVERRIDES[path]
 	}
 
 	const asset = loadedAssets[path]
 	if (!asset) throw new Error(`Asset not found: ${path}`)
-	return Buffer.from(asset)
+	return asset
 }
 
 export function getPngAssetAsDataUrl(path: string) {
 	const asset = getRawAsset(path)
 	if (!asset) throw new Error(`Asset not found: ${path}`)
-	return `data:image/png;base64,${asset.toString('base64')}`
+	return `data:image/png;base64,${Buffer.from(asset).toString('base64')}`
 }
 
-export function getJSONAsset(path: string) {
+export function getJSONAsset(path: string): any {
 	const asset = getRawAsset(path)
 	if (!asset) throw new Error(`Asset not found: ${path}`)
-	const assetString = asset.toString('utf-8')
-	try {
-		return JSON.parse(assetString)
-	} catch (error) {
-		console.error(`Failed to parse JSON asset from ${path}:`, assetString, error)
-		throw error
-	}
+	const json = JSON.parse(Buffer.from(asset).toString('utf-8'))
+	return json
 }
-
-EVENTS.PLUGIN_LOAD.subscribe(() => {
-	if (!window.navigator.onLine) {
-		showOfflineError()
-	}
-	EVENTS.NETWORK_CONNECTED.publish()
-
-	showLoadingPopup()
-
-	void Promise.all([
-		new Promise<void>(resolve => EVENTS.MINECRAFT_ASSETS_LOADED.subscribe(resolve)),
-		new Promise<void>(resolve => EVENTS.MINECRAFT_REGISTRY_LOADED.subscribe(resolve)),
-		new Promise<void>(resolve => EVENTS.MINECRAFT_FONTS_LOADED.subscribe(resolve)),
-		new Promise<void>(resolve => EVENTS.BLOCKSTATE_REGISTRY_LOADED.subscribe(resolve)),
-	])
-		.then(() => {
-			hideLoadingPopup()
-		})
-		.catch(error => {
-			console.error(error)
-			Blockbench.showToastNotification({
-				text: 'Animated Java failed to load! Please restart Blockbench',
-				color: 'var(--color-error)',
-			})
-		})
-})

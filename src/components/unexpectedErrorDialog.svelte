@@ -1,7 +1,7 @@
 <script lang="ts" context="module">
 	import { translate } from '../util/translation'
 
-	const FLAVOR_QUOTES = [
+	const flavorQuotes = [
 		`Uh oh!`,
 		`Time to fire up the ol' debugger!`,
 		`Your item displays are sad 🥺`,
@@ -40,21 +40,20 @@
 	]
 
 	function pickRandomFlavorQuote() {
-		return FLAVOR_QUOTES[Math.floor(Math.random() * FLAVOR_QUOTES.length)]
+		return flavorQuotes[Math.floor(Math.random() * flavorQuotes.length)]
 	}
 </script>
 
 <script lang="ts">
 	export let error: Error
 
-	let value = error.message + '\n' + (error.stack ?? '')
+	let value = error.message + '\n' + (error.stack || '')
 
 	function copyError() {
-		void navigator.clipboard.writeText(value).then(() => {
-			Blockbench.showQuickMessage(
-				translate('dialog.unexpected_error.copy_error_message_button.message')
-			)
-		})
+		navigator.clipboard.writeText(value)
+		Blockbench.showQuickMessage(
+			translate('dialog.unexpected_error.copy_error_message_button.message'),
+		)
 	}
 </script>
 
@@ -68,7 +67,7 @@
 		{@html translate(
 			'dialog.unexpected_error.paragraph',
 			'<a href="https://animated-java.dev/discord">Discord</a>',
-			'<a href="https://github.com/Animated-Java/animated-java/issues">Github</a>'
+			'<a href="https://github.com/Animated-Java/animated-java/issues">Github</a>',
 		)}
 	</p>
 	<div class="codebox dark_bordered">

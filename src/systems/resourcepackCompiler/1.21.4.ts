@@ -1,34 +1,47 @@
-import type { ResourcePackCompiler } from '.'
-import { PROGRESS_DESCRIPTION } from '../../interface/dialog/exportProgress'
-import { isResourcePackPath, sanitizeStorageKey } from '../../util/minecraftUtil'
+import { MAX_PROGRESS, PROGRESS, PROGRESS_DESCRIPTION } from '../../interface/dialog/exportProgress'
+import { isResourcePackPath, toSafeFuntionName } from '../../util/minecraftUtil'
 import { Variant } from '../../variants'
-import type { IItemDefinition } from '../minecraft/itemDefinitions'
+import { IntentionalExportError } from '../exporter'
+import { IItemDefinition } from '../minecraft/itemDefinitions'
 import { type ITextureAtlas } from '../minecraft/textureAtlas'
-import type { IRenderedNodes, IRenderedRig, IRenderedVariantModel } from '../rigRenderer'
+import { IRenderedNodes, IRenderedRig, IRenderedVariantModel } from '../rigRenderer'
+import { zip } from '../util'
+import { ResourcePackAJMeta } from './global'
 
-const compileResourcePack: ResourcePackCompiler = async ({
-	coreFiles,
-	versionedFiles,
-	rig,
-	textureExportFolder,
-	modelExportFolder,
-}) => {
+export default async function compileResourcePack(options: {
+	rig: IRenderedRig
+	resourcePackFolder: string
+	textureExportFolder: string
+	modelExportFolder: string
+}) {
+	const { rig, resourcePackFolder, textureExportFolder, modelExportFolder } = options
 	const aj = Project!.animated_java
-
+	const lastUsedExportNamespace = Project!.last_used_export_namespace
 	PROGRESS_DESCRIPTION.set('Compiling Resource Pack...')
-	console.log('Compiling resource pack...', {
-		rig,
-		textureExportFolder,
-		modelExportFolder,
-	})
+	console.log('Compiling resource pack...', options)
 
+	const ajmeta = new ResourcePackAJMeta(
+		PathModule.join(options.resourcePackFolder, 'assets.ajmeta'),
+		aj.export_namespace,
+		lastUsedExportNamespace,
+		options.resourcePackFolder
+	)
+	ajmeta.read()
+
+	const exportedFiles = new Map<string, string | Buffer>()
+
+	const globalModelsFolder = PathModule.join(resourcePackFolder, 'assets/animated_java/models/')
 	const itemModelDefinitionsFolder = PathModule.join(
+		resourcePackFolder,
 		'assets/animated_java/items/blueprint/',
 		aj.export_namespace
 	)
 
 	// Texture atlas
-	const blockAtlasPath = PathModule.join('assets/minecraft/atlases/blocks.json')
+	const blockAtlasPath = PathModule.join(
+		resourcePackFolder,
+		'assets/minecraft/atlases/blocks.json'
+	)
 	const blockAtlas: ITextureAtlas = await fs.promises
 		.readFile(blockAtlasPath, 'utf-8')
 		.catch(() => {
@@ -54,9 +67,10 @@ const compileResourcePack: ResourcePackCompiler = async ({
 			prefix: 'blueprint/',
 		})
 	}
-	coreFiles.set(blockAtlasPath, {
-		content: autoStringify(blockAtlas),
-	})
+	exportedFiles.set(blockAtlasPath, autoStringify(blockAtlas))
+
+	// Internal Models
+	exportedFiles.set(PathModule.join(globalModelsFolder, 'empty.json'), '{}')
 
 	// Textures
 	for (const texture of Object.values(rig.textures)) {
@@ -82,20 +96,16 @@ const compileResourcePack: ResourcePackCompiler = async ({
 			throw new Error(`Texture ${texture.name} is missing it's image data.`)
 		}
 
-		let textureName = texture.name.replace(/\.png$/, '')
-		textureName = sanitizeStorageKey(textureName) + '.png'
-
-		versionedFiles.set(PathModule.join(textureExportFolder, textureName), { content: image })
-
+		let textureName = toSafeFuntionName(texture.name)
+		if (!texture.name.endsWith('.png')) textureName += '.png'
+		exportedFiles.set(PathModule.join(textureExportFolder, textureName), image)
 		if (mcmeta !== undefined)
-			versionedFiles.set(PathModule.join(textureExportFolder, textureName + '.mcmeta'), {
-				content: mcmeta,
-			})
-
+			exportedFiles.set(PathModule.join(textureExportFolder, textureName + '.mcmeta'), mcmeta)
 		if (optifineEmissive !== undefined)
-			versionedFiles.set(PathModule.join(textureExportFolder, textureName + '_e.png'), {
-				content: optifineEmissive,
-			})
+			exportedFiles.set(
+				PathModule.join(textureExportFolder, textureName + '_e.png'),
+				optifineEmissive
+			)
 	}
 
 	// Item Model Definitions
@@ -113,7 +123,7 @@ const compileResourcePack: ResourcePackCompiler = async ({
 			itemDefinition = createMultiVariantItemDefinition(boneUuid, model, rig)
 		}
 
-		versionedFiles.set(exportPath, { content: autoStringify(itemDefinition) })
+		exportedFiles.set(exportPath, autoStringify(itemDefinition))
 	}
 
 	// Variant Models
@@ -124,23 +134,97 @@ const compileResourcePack: ResourcePackCompiler = async ({
 			const exportPath = variant.is_default
 				? PathModule.join(modelExportFolder, bone.name + '.json')
 				: PathModule.join(modelExportFolder, variant.name, bone.name + '.json')
-			versionedFiles.set(PathModule.join(exportPath), {
-				content: autoStringify(variantModel.model),
-			})
+			exportedFiles.set(PathModule.join(exportPath), autoStringify(variantModel.model))
 		}
+	}
+
+	if (aj.enable_plugin_mode) {
+		// Do nothing
+		console.log('Plugin mode enabled. Skipping resource pack export.')
+	} else if (aj.resource_pack_export_mode === 'raw') {
+		// Clean up old files
+		PROGRESS_DESCRIPTION.set('Removing Old Resource Pack Files...')
+		PROGRESS.set(0)
+		MAX_PROGRESS.set(ajmeta.oldFiles.size)
+
+		const removedFolders = new Set<string>()
+		for (const file of ajmeta.oldFiles) {
+			if (fs.existsSync(file)) await fs.promises.unlink(file)
+			let folder = PathModule.dirname(file)
+			while (
+				!removedFolders.has(folder) &&
+				fs.existsSync(folder) &&
+				(await fs.promises.readdir(folder)).length === 0
+			) {
+				await fs.promises.rm(folder, { recursive: true })
+				removedFolders.add(folder)
+				folder = PathModule.dirname(folder)
+			}
+			PROGRESS.set(PROGRESS.get() + 1)
+		}
+
+		// Write new files
+		ajmeta.files = new Set(exportedFiles.keys())
+		ajmeta.files.delete(blockAtlasPath)
+		ajmeta.write()
+
+		PROGRESS_DESCRIPTION.set('Writing Resource Pack...')
+		PROGRESS.set(0)
+		MAX_PROGRESS.set(exportedFiles.size)
+		const createdFolderCache = new Set<string>()
+
+		for (const [path, data] of exportedFiles) {
+			const folder = PathModule.dirname(path)
+			if (!createdFolderCache.has(folder)) {
+				await fs.promises.mkdir(folder, { recursive: true })
+				createdFolderCache.add(folder)
+			}
+			await fs.promises.writeFile(path, data)
+			PROGRESS.set(PROGRESS.get() + 1)
+		}
+	} else if (aj.resource_pack_export_mode === 'zip') {
+		exportedFiles.set(
+			PathModule.join(resourcePackFolder, 'pack.mcmeta'),
+			autoStringify({
+				pack: {
+					// FIXME - This should be a setting
+					pack_format: 32,
+					description: `${Project!.name}. Generated with Animated Java`,
+				},
+			})
+		)
+
+		PROGRESS_DESCRIPTION.set('Writing Resource Pack Zip...')
+		const data: Record<string, Uint8Array> = {}
+		for (const [path, file] of exportedFiles) {
+			const relativePath = PathModule.relative(resourcePackFolder, path)
+			if (typeof file === 'string') {
+				data[relativePath] = Buffer.from(file)
+			} else {
+				data[relativePath] = file
+			}
+		}
+		const zipped = await zip(data, {})
+		await fs.promises.writeFile(
+			resourcePackFolder + (resourcePackFolder.endsWith('.zip') ? '' : '.zip'),
+			zipped
+		)
 	}
 
 	console.log('Resource pack compiled!')
 }
-
-export default compileResourcePack
 
 function createSingleVariantItemDefinition(model: IRenderedVariantModel): IItemDefinition {
 	return {
 		model: {
 			type: 'minecraft:model',
 			model: model.resource_location,
-			tints: [new oneLiner({ type: 'minecraft:dye', default: [1, 1, 1] })],
+			tints: [
+				{
+					type: 'minecraft:dye',
+					default: [1, 1, 1],
+				},
+			],
 		},
 	}
 }
@@ -156,17 +240,17 @@ function createMultiVariantItemDefinition(
 		model: {
 			type: 'minecraft:select',
 			property: 'minecraft:custom_model_data',
-			cases: [
-				{
-					when: 'AJ_INTERNAL_EMPTY',
-					model: { type: 'minecraft:empty' },
-				},
-			],
+			cases: [],
 			fallback: {
 				type: 'minecraft:model',
 				model: model.resource_location,
-				tints: [new oneLiner({ type: 'minecraft:dye', default: [1, 1, 1] })],
 			},
+			tints: [
+				{
+					type: 'minecraft:dye',
+					default: [1, 1, 1],
+				},
+			],
 		},
 	}
 
@@ -178,7 +262,6 @@ function createMultiVariantItemDefinition(
 			model: {
 				type: 'minecraft:model',
 				model: variantModel.resource_location,
-				tints: [new oneLiner({ type: 'minecraft:dye', default: [1, 1, 1] })],
 			},
 		} as (typeof itemDefinition.model.cases)[0])
 	}

@@ -1,64 +1,55 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte'
-	import { roundToNth } from '../../util/misc'
 	import { Valuable } from '../../util/stores'
 	import BaseDialogItem from './baseDialogItem.svelte'
 
 	export let label: string
-	export let tooltip = ''
+	export let tooltip: string = ''
 	export let value: Valuable<number>
 	export let defaultValue: number
-	export let min = -Infinity
-	export let max = Infinity
-	/** Minimum difference between two unique values */
-	export let valueStep = 0.1
-	/** How much to change when dragging */
-	export let dragStep: number | undefined = valueStep
+	export let min: number | undefined = undefined
+	export let max: number | undefined = undefined
+	export let step: number | undefined = undefined
+
+	const molangParser = new Molang()
 
 	let input: HTMLInputElement
 	let slider: HTMLElement
 
-	const clampValue = (v: number) => {
-		return Math.clamp(roundToNth(v, 1 / (valueStep ?? 1)), min, max) || 0
-	}
-
-	const onStartDrag = (moveEvent: MouseEvent | TouchEvent) => {
-		const mouseStartEvent = convertTouchEvent(moveEvent)
-		const originalValue = value.get()
-
-		const drag = (moveEvent: MouseEvent | TouchEvent) => {
-			const mouseEndEvent = convertTouchEvent(moveEvent)
-			const diff =
-				Math.trunc((mouseEndEvent.clientX - mouseStartEvent.clientX) / 10) * (dragStep ?? 1)
-			const adjustedValue = clampValue(originalValue + diff)
-			if (adjustedValue !== value.get()) {
-				value.set(adjustedValue)
-			}
-		}
-
-		addEventListeners(document, 'mousemove touchmove', drag)
-		addEventListeners(
-			document,
-			'mouseup touchend',
-			() => removeEventListeners(document, 'mousemove touchmove', drag), // End drag
-			{ once: true }
-		)
-	}
-
-	const MOLANG_PARSER = new Molang()
-	const onInput = () => {
-		value.set(clampValue(MOLANG_PARSER.parse(value.get())))
-	}
-
-	// onMount
 	requestAnimationFrame(() => {
-		addEventListeners(slider, 'mousedown touchstart', onStartDrag)
-		addEventListeners(input, 'focusout dblclick', onInput)
-	})
+		addEventListeners(slider, 'mousedown touchstart', (e1: any) => {
+			convertTouchEvent(e1)
+			let last_difference = 0
+			function move(e2: any) {
+				convertTouchEvent(e2)
+				let difference = Math.trunc((e2.clientX - e1.clientX) / 10) * (step || 1)
+				if (difference != last_difference) {
+					value.set(
+						Math.clamp(
+							value.get() + (difference - last_difference),
+							min !== undefined ? min : -Infinity,
+							max !== undefined ? max : Infinity,
+						) || 0,
+					)
+					last_difference = difference
+				}
+			}
+			function stop(e2: any) {
+				removeEventListeners(document, 'mousemove touchmove', move, null)
+				removeEventListeners(document, 'mouseup touchend', stop, null)
+			}
+			addEventListeners(document as unknown as any, 'mousemove touchmove', move)
+			addEventListeners(document as unknown as any, 'mouseup touchend', stop)
+		})
 
-	onDestroy(() => {
-		removeEventListeners(input, 'focusout dblclick', onInput)
-		removeEventListeners(slider, 'mousedown touchstart', onStartDrag)
+		addEventListeners(input, 'focusout dblclick', () => {
+			value.set(
+				Math.clamp(
+					molangParser.parse(value.get()),
+					min !== undefined ? min : -Infinity,
+					max !== undefined ? max : Infinity,
+				) || 0,
+			)
+		})
 	})
 
 	function onReset() {
@@ -77,18 +68,9 @@
 				bind:value={$value}
 				inputmode="decimal"
 			/>
-			<div bind:this={slider} class="tool numaric_input_slider slider-fix">
+			<div bind:this={slider} class="tool numaric_input_slider">
 				<i class="material-icons icon">code</i>
 			</div>
 		</div>
 	</div>
 </BaseDialogItem>
-
-<style>
-	input {
-		padding: 0 8px !important;
-	}
-	.slider-fix {
-		right: 8px !important;
-	}
-</style>

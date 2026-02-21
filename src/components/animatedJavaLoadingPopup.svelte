@@ -1,4 +1,5 @@
 <script lang="ts" context="module">
+	import { onMount } from 'svelte'
 	import RunningArmorStand from '../assets/armor_stand_running.webp'
 	import { type Valuable } from '../util/stores'
 </script>

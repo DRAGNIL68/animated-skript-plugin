@@ -1,28 +1,20 @@
-import {
-	activeProjectIsBlueprintFormat as condition,
-	type IBlueprintLocatorConfigJSON,
-} from '../formats/blueprint'
-import { registerMod } from '../util/moddingTools'
+import { isCurrentFormat as condition } from '../blueprintFormat'
+import { PACKAGE } from '../constants'
+import { type ContextProperty, createBlockbenchMod } from '../util/moddingTools'
 
-declare global {
-	interface Locator {
-		config: IBlueprintLocatorConfigJSON
-	}
-}
-
-registerMod({
-	id: `animated-java:locator-properties`,
-
-	apply: () => {
-		const config = new Property(Locator, 'instance', 'config', {
+createBlockbenchMod(
+	`${PACKAGE.name}:locatorProperties`,
+	{
+		config: undefined as ContextProperty<'instance'>,
+	},
+	context => {
+		context.config = new Property(Locator, 'instance', 'config', {
 			condition,
 			default: undefined,
 		})
-
-		return { config }
+		return context
 	},
-
-	revert: ({ config }) => {
-		config?.delete()
-	},
-})
+	context => {
+		context.config?.delete()
+	}
+)

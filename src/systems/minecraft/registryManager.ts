@@ -1,6 +1,6 @@
-import EVENTS from '../../util/events'
 import { checkForAssetsUpdate } from './assetManager'
 import { getLatestVersion } from './versionManager'
+import { events } from '../../util/events'
 
 interface IRegistryJSON {
 	activity: string[]
@@ -93,17 +93,17 @@ const REGISTRIES_URL =
 	'https://raw.githubusercontent.com/misode/mcmeta/summary/registries/data.json'
 
 class MinecraftRegistryEntry {
-	items: string[] = []
+	public items: string[] = []
 
 	constructor(entries: string[]) {
 		this.items = entries
 	}
 
-	has(item: string): boolean {
+	public has(item: string): boolean {
 		return this.items.includes(item)
 	}
 
-	find(searchFunction: (item: string) => boolean): string | undefined {
+	public find(searchFunction: (item: string) => boolean): string | undefined {
 		return this.items.find(searchFunction)
 	}
 }
@@ -136,7 +136,7 @@ async function updateLocalRegistry() {
 		} catch (error) {
 			console.error('Failed to fetch latest Minecraft registry:', error)
 		}
-		if (response?.ok) {
+		if (response && response.ok) {
 			const newRegistry = (await response.json()) as IRegistryJSON
 			localStorage.setItem('animated_java:minecraftRegistry', JSON.stringify(newRegistry))
 			const latestVersion = await getLatestVersion()
@@ -175,10 +175,10 @@ export async function checkForRegistryUpdate() {
 
 	console.log('Minecraft Registry is up to date!')
 	updateMemoryRegistry()
-	requestAnimationFrame(() => EVENTS.MINECRAFT_REGISTRY_LOADED.publish())
+	requestAnimationFrame(() => events.MINECRAFT_REGISTRY_LOADED.dispatch())
 }
 
-EVENTS.NETWORK_CONNECTED.subscribe(() => {
+events.NETWORK_CONNECTED.subscribe(() => {
 	void checkForRegistryUpdate().then(async () => {
 		await checkForAssetsUpdate()
 	})

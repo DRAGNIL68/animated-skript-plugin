@@ -1,53 +1,52 @@
-<script lang="ts" context="module">
-	import AnimatedJavaIcon from '../assets/animated_java_icon.svg'
+<script lang="ts">
 	import changelog from '../pluginPackage/changelog.json'
+	import AnimatedJavaIcon from '../assets/animated_java_icon.svg'
 
-	const ISSUES_URL = 'https://api.github.com/repos/animated-java/animated-java/issues/'
-
-	const formatDateFull = (date: string) => {
-		// @ts-expect-error No types for getDateDisplay
+	function formatDateFull(date: string) {
+		// @ts-expect-error
 		return getDateDisplay(date).full
 	}
-	const formatDateShort = (date: string) => {
-		// @ts-expect-error No types for getDateDisplay
+	function formatDateShort(date: string) {
+		// @ts-expect-error
 		return getDateDisplay(date).short
 	}
 
-	interface GithubIssue {
-		number: number
-		title: string
-		html_url: string
-	}
+	const ISSUES_URL = 'https://api.github.com/repos/animated-java/animated-java/issues/'
 
-	const ISSUES = new Map<string, GithubIssue>()
-
-	const fetchIssue = async (issueId: string): Promise<GithubIssue | undefined> => {
-		if (ISSUES.has(issueId)) return ISSUES.get(issueId)
-
-		const issue = await fetch(ISSUES_URL + issueId)
-			.then(async response => {
-				const json = await response.json()
-				if (!response.ok)
-					throw new Error(
-						`Failed to fetch issue ${issueId}: ` + (json.message ?? response.statusText)
+	async function formatMarkdown(text: string) {
+		const issues: Record<number, { title: string; url: string }> = {}
+		text = text.replace('[BREAKING]', '<span class="breaking">BREAKING</span>')
+		text = text.replace(/\[([^\]]+?)\]\(([^)]+?)\)/gm, (match, title, url) => {
+			const issueMatch = url.match(/issues\/(\d+)/)
+			if (issueMatch) {
+				const issueNumber = parseInt(issueMatch[1])
+				issues[issueNumber] = { title, url }
+				return `$$$ISSUE${issueNumber}$$$`
+			}
+			return `<a href="${url}" target="_blank">${title}</a>`
+		})
+		for (const [issueNumber, { title, url }] of Object.entries(issues)) {
+			await fetch(`${ISSUES_URL}${issueNumber}`)
+				.then(response => response.json())
+				.then(data => {
+					text = text.replace(
+						`$$$ISSUE${issueNumber}$$$`,
+						`<a href="${url}" target="_blank">#${issueNumber} - ${data.title}</a>`,
 					)
-				return json
-			})
-			.catch(e => {
-				console.error(`Failed to fetch issue ${issueId}`, e)
-				return undefined
-			})
-		if (issue) ISSUES.set(issueId, issue)
-		return issue
+				})
+		}
+		// inline code blocks
+		text = text.replace(/`([^`]+?)`/g, '<code>$1</code>')
+		return text
 	}
 </script>
 
 <div class="content plugin_browser_tabbed_page" id="plugin_browser_changelog">
-	{#each Object.values(changelog).reverse().slice(0, 4) as versions}
+	{#each Object.values(changelog).reverse() as versions}
 		<div class="title-container">
 			<img src={AnimatedJavaIcon} alt="" />
 			<h3>
-				{'Animated Java ' + versions.title}
+				{versions.title}
 			</h3>
 		</div>
 		<!-- svelte-ignore a11y-label-has-associated-control -->
@@ -61,64 +60,14 @@
 		<ul>
 			{#each versions.categories as category}
 				<li>
-					<h4>
-						{category.title}
-					</h4>
+					<h4>{category.title}</h4>
 					<ul class="plugin_changelog_features">
 						{#each category.list as item}
-							{@const issueMatch = /^Fixed \[#(\d+)\]\(.+?\)$/.exec(item)}
-							{#if issueMatch}
-								{#await fetchIssue(issueMatch[1])}
-									<li>
-										<p>
-											<i class="material-icons icon spinner"
-												>progress_activity</i
-											>
-											<!-- svelte-ignore missing-declaration -->
-											{@html pureMarked(item)}
-										</p>
-									</li>
-								{:then issue}
-									<li>
-										<p>
-											{'Fixed '}
-											{#if issue}
-												<a href={issue.html_url} target="_blank">
-													{'#' + issue.number}
-												</a>
-												{' - '}
-												<!-- svelte-ignore missing-declaration -->
-												{@html pureMarked(issue.title)}
-											{:else}
-												<a
-													href="${ISSUES_URL + issueMatch[1]}"
-													target="_blank"
-												>
-													{'#' + issueMatch[1]}
-												</a>
-											{/if}
-										</p>
-									</li>
-								{:catch}
-									<li>
-										<!-- svelte-ignore missing-declaration -->
-										{@html pureMarked(item)}
-									</li>
+							<li>
+								{#await formatMarkdown(item) then data}
+									{@html data}
 								{/await}
-							{:else if item.startsWith('[BREAKING]')}
-								<li>
-									<p>
-										<span class="breaking">BREAKING</span>
-										<!-- svelte-ignore missing-declaration -->
-										{@html pureMarked(item.replace('[BREAKING]', '').trim())}
-									</p>
-								</li>
-							{:else}
-								<li>
-									<!-- svelte-ignore missing-declaration -->
-									{@html pureMarked(item)}
-								</li>
-							{/if}
+							</li>
 						{/each}
 					</ul>
 				</li>
@@ -126,7 +75,6 @@
 		</ul>
 		<hr />
 	{/each}
-	<p class="disclaimer">To see the full changelog, open Animated Java in the plugin list.</p>
 </div>
 
 <style>
@@ -145,9 +93,8 @@
 		color: var(--color-back);
 		padding: 0 0.3em;
 		border-radius: 3px;
-		font-size: 0.9em;
-		font-weight: bold;
-		height: min-content;
+		font-size: 0.8em;
+		font-weight: 700;
 	}
 	img {
 		border-radius: 4px;
@@ -166,32 +113,5 @@
 		justify-content: flex-start;
 		align-items: center;
 		margin-top: 8px;
-	}
-	hr {
-		margin: 2rem 0;
-	}
-	.disclaimer {
-		font-size: 0.9em;
-		color: var(--color-text-secondary);
-		font-style: italic;
-		text-align: center;
-		margin-top: 1rem;
-	}
-	li > p {
-		display: flex;
-		flex-direction: row;
-		gap: 0.5rem;
-		align-items: flex-start;
-	}
-	@keyframes spin {
-		from {
-			transform: rotate(0deg);
-		}
-		to {
-			transform: rotate(360deg);
-		}
-	}
-	.spinner {
-		animation: spin 1s linear infinite;
 	}
 </style>

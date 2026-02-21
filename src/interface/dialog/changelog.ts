@@ -10,7 +10,8 @@ export function openChangelogDialog() {
 		id: DIALOG_ID,
 		title: translate('dialog.changelog_dialog.title'),
 		width: 600,
-		content: { component: ChangelogDialog },
+		component: ChangelogDialog,
+		props: {},
 		buttons: ['OK!'],
 		preventKeybinds: true,
 	}).show()

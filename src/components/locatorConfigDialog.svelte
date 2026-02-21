@@ -1,10 +1,20 @@
-<script lang="ts" context="module">
-	import { MINECRAFT_REGISTRY } from '../systems/minecraft/registryManager'
+<script lang="ts" , context="module">
+	import CodeInput from './dialogItems/codeInput.svelte'
+	import CheckBox from './dialogItems/checkbox.svelte'
+	import LineInput from './dialogItems/lineInput.svelte'
+
 	import { Valuable } from '../util/stores'
 	import { translate } from '../util/translation'
-	import CheckBox from './dialogItems/checkbox.svelte'
-	import CodeInput from './dialogItems/codeInput.svelte'
-	import LineInput from './dialogItems/lineInput.svelte'
+	import { MINECRAFT_REGISTRY } from '../systems/minecraft/registryManager'
+</script>
+
+<script lang="ts">
+	const pluginModeEnabled = !!Project?.animated_java?.enable_plugin_mode
+
+	export let useEntity: Valuable<boolean>
+	export let entityType: Valuable<string>
+	export let summonCommands: Valuable<string>
+	export let tickingCommands: Valuable<string>
 
 	const entityTypeValidator: DialogItemValueChecker<string> = (value: string) => {
 		if (value.length === 0) {
@@ -27,19 +37,8 @@
 	}
 </script>
 
-<script lang="ts">
-	const PLUGIN_MODE = !!Project?.animated_java?.enable_plugin_mode
-
-	export let useEntity: Valuable<boolean>
-	export let entityType: Valuable<string>
-	export let syncPassengerRotation: Valuable<boolean>
-	export let onSummonFunction: Valuable<string>
-	export let onRemoveFunction: Valuable<string>
-	export let onTickFunction: Valuable<string>
-</script>
-
 <div>
-	{#if PLUGIN_MODE}
+	{#if pluginModeEnabled}
 		{#each translate('dialog.locator_config.plugin_mode_warning').split('\n') as line}
 			<p>{line}</p>
 		{/each}
@@ -60,42 +59,18 @@
 				defaultValue="minecraft:item_display"
 			/>
 
-			<CheckBox
-				label={translate('dialog.locator_config.sync_passenger_rotation.title')}
-				tooltip={translate('dialog.locator_config.sync_passenger_rotation.description')}
-				bind:checked={syncPassengerRotation}
-				defaultValue={false}
-			/>
-
 			<CodeInput
-				label={translate('dialog.locator_config.on_summon_function.title')}
-				tooltip={$useEntity
-					? translate(
-							'dialog.locator_config.on_summon_function.description_with_use_entity'
-						)
-					: translate('dialog.locator_config.on_summon_function.description')}
-				bind:value={onSummonFunction}
-				defaultValue=""
-			/>
-
-			<CodeInput
-				label={translate('dialog.locator_config.on_remove_function.title')}
-				tooltip={$useEntity
-					? translate(
-							'dialog.locator_config.on_remove_function.description_with_use_entity'
-						)
-					: translate('dialog.locator_config.on_remove_function.description')}
-				bind:value={onRemoveFunction}
+				label={translate('dialog.locator_config.summon_commands.title')}
+				tooltip={translate('dialog.locator_config.summon_commands.description')}
+				bind:value={summonCommands}
 				defaultValue=""
 			/>
 		{/if}
 
 		<CodeInput
-			label={translate('dialog.locator_config.on_tick_function.title')}
-			tooltip={$useEntity
-				? translate('dialog.locator_config.on_tick_function.description_with_use_entity')
-				: translate('dialog.locator_config.on_tick_function.description')}
-			bind:value={onTickFunction}
+			label={translate('dialog.locator_config.ticking_commands.title')}
+			tooltip={translate('dialog.locator_config.ticking_commands.description')}
+			bind:value={tickingCommands}
 			defaultValue=""
 		/>
 	{/if}

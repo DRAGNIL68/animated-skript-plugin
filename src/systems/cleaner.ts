@@ -1,7 +1,8 @@
 import { isFunctionTagPath } from '../util/fileUtil'
-import { type FunctionTagJSON, parseDataPackPath } from '../util/minecraftUtil'
+import { IFunctionTag, parseDataPackPath } from '../util/minecraftUtil'
+import { DataPackAJMeta } from './datapackCompiler'
 import { getExportPaths } from './exporter'
-import { AJMeta } from './global'
+import { ResourcePackAJMeta } from './resourcepackCompiler/global'
 import { replacePathPart } from './util'
 
 export async function cleanupExportedFiles() {
@@ -14,9 +15,9 @@ export async function cleanupExportedFiles() {
 		// displayItemPath,
 	} = getExportPaths()
 
-	if (aj.resource_pack_export_mode === 'folder') {
+	if (aj.resource_pack_export_mode === 'raw') {
 		const assetsMetaPath = PathModule.join(resourcePackFolder, 'assets.ajmeta')
-		const assetsMeta = new AJMeta(
+		const assetsMeta = new ResourcePackAJMeta(
 			assetsMetaPath,
 			aj.export_namespace,
 			Project!.last_used_export_namespace,
@@ -28,7 +29,7 @@ export async function cleanupExportedFiles() {
 		// PROGRESS.set(0)
 		// MAX_PROGRESS.set(assetsMeta.oldFiles.size)
 		const removedFolders = new Set<string>()
-		for (const file of assetsMeta.previousVersionedFiles) {
+		for (const file of assetsMeta.oldFiles) {
 			if (!isFunctionTagPath(file)) {
 				if (fs.existsSync(file)) await fs.promises.unlink(file)
 			} else if (aj.export_namespace !== Project!.last_used_export_namespace) {
@@ -66,9 +67,9 @@ export async function cleanupExportedFiles() {
 		assetsMeta.write()
 	}
 
-	if (aj.data_pack_export_mode === 'folder') {
+	if (aj.data_pack_export_mode === 'raw') {
 		const dataMetaPath = PathModule.join(dataPackFolder, 'data.ajmeta')
-		const dataMeta = new AJMeta(
+		const dataMeta = new DataPackAJMeta(
 			dataMetaPath,
 			aj.export_namespace,
 			Project!.last_used_export_namespace,
@@ -80,7 +81,7 @@ export async function cleanupExportedFiles() {
 		// PROGRESS.set(0)
 		// MAX_PROGRESS.set(dataMeta.oldFiles.size)
 		const removedFolders = new Set<string>()
-		for (const file of [...dataMeta.previousCoreFiles, ...dataMeta.previousVersionedFiles]) {
+		for (const file of dataMeta.oldFiles) {
 			if (isFunctionTagPath(file) && fs.existsSync(file)) {
 				if (aj.export_namespace !== Project!.last_used_export_namespace) {
 					const resourceLocation = parseDataPackPath(file)!.resourceLocation
@@ -100,7 +101,7 @@ export async function cleanupExportedFiles() {
 					}
 				}
 				// Remove mentions of the export namespace from the file
-				const content: FunctionTagJSON = JSON.parse(
+				const content: IFunctionTag = JSON.parse(
 					(await fs.promises.readFile(file)).toString()
 				)
 				content.values = content.values.filter(

@@ -1,13 +1,17 @@
-import * as crypto from 'crypto'
-import { BONE_INTERPOLATION_ENABLED } from 'src/mods/boneAnimatorMod'
-import { MAX_PROGRESS, PROGRESS, PROGRESS_DESCRIPTION } from '../interface/dialog/exportProgress'
+import {
+	getKeyframeCommands,
+	getKeyframeExecuteCondition,
+	getKeyframeRepeat,
+	getKeyframeRepeatFrequency,
+	getKeyframeVariant,
+} from '../mods/customKeyframesMod'
 import { TextDisplay } from '../outliner/textDisplay'
 import { VanillaBlockDisplay } from '../outliner/vanillaBlockDisplay'
 import { VanillaItemDisplay } from '../outliner/vanillaItemDisplay'
-import { sanitizeStorageKey } from '../util/minecraftUtil'
-import { eulerFromQuaternion, roundToNth, scrubUndefined } from '../util/misc'
-import type { AnyRenderedNode, IRenderedRig } from './rigRenderer'
-import { sleepForAnimationFrame } from './util'
+import { toSafeFuntionName } from '../util/minecraftUtil'
+import { eulerFromQuaternion, roundToNth } from '../util/misc'
+import { AnyRenderedNode, IRenderedRig } from './rigRenderer'
+import * as crypto from 'crypto'
 
 export function correctSceneAngle() {
 	main_preview.controls.rotateLeft(Math.PI)
@@ -38,10 +42,10 @@ function getNodeMatrix(node: OutlinerElement, scale: number) {
 
 function getDecomposedTransformation(matrix: THREE.Matrix4) {
 	const translation = new THREE.Vector3()
-	const leftRotation = new THREE.Quaternion()
+	const left_rotation = new THREE.Quaternion()
 	const scale = new THREE.Vector3()
-	matrix.decompose(translation, leftRotation, scale)
-	return { translation, left_rotation: leftRotation, scale }
+	matrix.decompose(translation, left_rotation, scale)
+	return { translation, left_rotation, scale }
 }
 
 function threeAxisRotationToTwoAxisRotation(rot: THREE.Quaternion): ArrayVector2 {
@@ -63,28 +67,27 @@ export interface INodeTransform {
 	head_rot: ArrayVector2
 	interpolation?: 'step' | 'pre-post'
 
-	function?: string
-	function_execute_condition?: string
+	commands?: string
+	execute_condition?: string
 }
 
 export interface IRenderedFrame {
 	time: number
 	node_transforms: Record<string, INodeTransform>
-	/** A list of Variants (by UUID) to apply this frame */
-	variants?: string[]
-	/** The condition to check before applying variants */
-	variants_execute_condition?: string
-	/** A mcfunction to run as the root on this frame. (Supports MCB syntax) */
-	function?: string
-	/** The condition to check before running the function */
-	function_execute_condition?: string
+	variant?: {
+		uuid: string
+		execute_condition?: string
+	}
+	commands?: {
+		commands: string
+		execute_condition?: string
+	}
 }
 
 export interface IRenderedAnimation {
 	name: string
-	/** A sanitized version of {@link IRenderedAnimation.name} that is safe to use as a key in a storage object. */
-	storage_name: string
 	uuid: string
+	safe_name: string
 	loop_delay: number
 	frames: IRenderedFrame[]
 	/**
@@ -99,11 +102,11 @@ export interface IRenderedAnimation {
 }
 
 let lastAnimation: _Animation | undefined
-interface LastFrameCacheItem {
+interface ILastFrameCacheItem {
 	matrix: THREE.Matrix4
 	keyframe?: _Keyframe
 }
-let lastFrameCache = new Map<string, LastFrameCacheItem>()
+let lastFrameCache = new Map<string, ILastFrameCacheItem>()
 /**
  * Map of node UUIDs to a map of times to keyframes
  */
@@ -118,8 +121,8 @@ export function getFrame(
 	const frame: IRenderedFrame = {
 		time,
 		node_transforms: {},
-		...getVariantKeyframe(animation, time),
-		...getFunctionKeyframe(animation, time),
+		variant: getVariantKeyframe(animation, time),
+		commands: getCommandsKeyframe(animation, time),
 	}
 
 	if (lastAnimation !== animation) {
@@ -153,71 +156,70 @@ export function getFrame(
 		const prevKeyframe = keyframes.get(time - 0.05)
 		const lastFrame = lastFrameCache.get(uuid)
 
-		const transform = {} as INodeTransform
+		let matrix: THREE.Matrix4
+		let interpolation: INodeTransform['interpolation']
+		let commands: string | undefined
+		let executeCondition: string | undefined
+		let repeat: boolean | undefined
+		let repeatFrequency: number | undefined
 
 		switch (node.type) {
 			case 'text_display':
 			case 'item_display':
 			case 'block_display':
 			case 'bone': {
-				transform.matrix = getNodeMatrix(outlinerNode, node.base_scale)
+				matrix = getNodeMatrix(outlinerNode, node.base_scale)
+				// Only add the frame if the matrix has changed.
+				if (lastFrame && lastFrame.matrix.equals(matrix)) continue
 				// Inherit instant interpolation from parent
 				if (node.parent && node.parent !== 'root') {
 					const parentKeyframes = keyframeCache.get(node.parent)
 					const parentKeyframe = parentKeyframes?.get(time)
 					const prevParentKeyframe = parentKeyframes?.get(time - 0.05)
 					if (parentKeyframe?.interpolation === 'step') {
-						transform.interpolation = 'step'
+						interpolation = 'step'
 					} else if (prevParentKeyframe?.data_points.length === 2) {
-						transform.interpolation = 'pre-post'
+						interpolation = 'pre-post'
 					}
 				}
-				// Only add the frame if the matrix has changed, this is the first frame, or there is an interpolation change.
-				if (
-					lastFrame &&
-					lastFrame.matrix.equals(transform.matrix) &&
-					transform.interpolation == undefined
-				)
-					continue
 				// Instant interpolation
 				if (keyframe?.interpolation === 'step') {
-					transform.interpolation = 'step'
+					interpolation = 'step'
 				} else if (prevKeyframe?.data_points.length === 2) {
-					transform.interpolation = 'pre-post'
+					interpolation = 'pre-post'
 					updatePreview(animation, time + 0.001)
 					const postMatrix = getNodeMatrix(outlinerNode, node.base_scale)
-					transform.matrix = postMatrix
+					console.warn('pre-post', matrix.equals(postMatrix), matrix, postMatrix)
+					matrix = postMatrix
 					updatePreview(animation, time)
 				}
 
-				lastFrameCache.set(uuid, { matrix: transform.matrix, keyframe })
+				lastFrameCache.set(uuid, { matrix, keyframe })
 				break
 			}
 			case 'locator': {
-				transform.matrix = getNodeMatrix(outlinerNode, 1)
-				// // Only add the frame if the matrix has changed, or this is the first frame
-				// if (lastFrame && lastFrame.matrix.equals(matrix)) continue
+				matrix = getNodeMatrix(outlinerNode, 1)
 				if (keyframe) {
-					transform.function = keyframe.function
-					transform.function_execute_condition = keyframe.execute_condition
-					lastFrameCache.set(uuid, { matrix: transform.matrix, keyframe })
+					commands = getKeyframeCommands(keyframe)
+					executeCondition = getKeyframeExecuteCondition(keyframe)
+					lastFrameCache.set(uuid, { matrix, keyframe })
 				} else if (lastFrame?.keyframe) {
-					const repeat = lastFrame.keyframe.repeat
-					const frequency = lastFrame.keyframe.repeat_frequency
-					if (repeat && frequency && Math.round(time * 20) % frequency === 0) {
-						transform.function = lastFrame.keyframe.function
-						transform.function_execute_condition = lastFrame.keyframe.execute_condition
+					repeat = getKeyframeRepeat(lastFrame.keyframe)
+					repeatFrequency = getKeyframeRepeatFrequency(lastFrame.keyframe)
+					if (
+						repeat &&
+						repeatFrequency &&
+						Math.round(time * 20) % repeatFrequency === 0
+					) {
+						commands = getKeyframeCommands(lastFrame.keyframe)
+						executeCondition = getKeyframeExecuteCondition(lastFrame.keyframe)
 					}
 				}
-				// lastFrameCache.set(uuid, { matrix, keyframe })
 				break
 			}
 			case 'camera':
 			case 'struct': {
-				transform.matrix = getNodeMatrix(outlinerNode, 1)
-				// Only add the frame if the matrix has changed, or this is the first frame
-				if (lastFrame?.matrix.equals(transform.matrix)) continue
-				lastFrameCache.set(uuid, { matrix: transform.matrix, keyframe })
+				matrix = getNodeMatrix(outlinerNode, 1)
 				break
 			}
 		}
@@ -225,60 +227,51 @@ export function getFrame(
 		const pos = new THREE.Vector3()
 		const rot = new THREE.Quaternion()
 		const scale = new THREE.Vector3()
-		transform.matrix.decompose(pos, rot, scale)
-		transform.decomposed = getDecomposedTransformation(transform.matrix)
+		matrix.decompose(pos, rot, scale)
+		const decomposed = getDecomposedTransformation(matrix)
 
-		if (node.type === 'locator' || node.type === 'camera') {
-			node.max_distance = Math.max(node.max_distance, pos.length())
+		frame.node_transforms[uuid] = {
+			matrix,
+			decomposed,
+			pos: [pos.x, pos.y, pos.z],
+			rot: eulerFromQuaternion(rot).toArray(),
+			scale: [scale.x, scale.y, scale.z],
+			head_rot: threeAxisRotationToTwoAxisRotation(rot),
+			interpolation,
+			commands,
+			execute_condition: executeCondition,
 		}
-
-		transform.pos = [pos.x, pos.y, pos.z]
-		transform.rot = eulerFromQuaternion(rot).toArray()
-		transform.scale = [scale.x, scale.y, scale.z]
-		transform.head_rot = threeAxisRotationToTwoAxisRotation(rot)
-
-		frame.node_transforms[uuid] = transform
 	}
 
 	return frame
 }
 
-function getVariantKeyframe(
-	animation: _Animation,
-	time: number
-): Pick<IRenderedFrame, 'variants' | 'variants_execute_condition'> {
+function getVariantKeyframe(animation: _Animation, time: number): IRenderedFrame['variant'] {
 	const variantKeyframes = animation.animators.effects?.variant as _Keyframe[]
-	if (variantKeyframes) {
-		const kf = variantKeyframes.find(kf => kf.time === time)
-		if (kf) {
-			// REVIEW - Variant keyframes do not support multiple variants yet.
-			const variant = kf.variant?.uuid
-			if (variant) {
-				return scrubUndefined({
-					variants: [variant],
-					variants_execute_condition: kf.execute_condition?.trim(),
-				})
-			}
+	if (!variantKeyframes) return
+	for (const kf of variantKeyframes) {
+		if (kf.time !== time) continue
+		const uuid = getKeyframeVariant(kf)
+		if (!uuid) return
+		return {
+			uuid,
+			execute_condition: getKeyframeExecuteCondition(kf),
 		}
 	}
-	return {}
 }
 
-function getFunctionKeyframe(
-	animation: _Animation,
-	time: number
-): Pick<IRenderedFrame, 'function' | 'function_execute_condition'> {
-	const functionKeyframes = animation.animators.effects?.function as _Keyframe[]
-	if (functionKeyframes) {
-		const kf = functionKeyframes.find(kf => kf.time === time)
-		if (kf) {
-			return scrubUndefined({
-				function: kf.function?.trim(),
-				function_execute_condition: kf.execute_condition?.trim(),
-			})
+function getCommandsKeyframe(animation: _Animation, time: number): IRenderedFrame['commands'] {
+	const commandsKeyframes = animation.animators.effects?.commands as _Keyframe[]
+	if (!commandsKeyframes) return
+	for (const kf of commandsKeyframes) {
+		if (kf.time !== time) continue
+		const commands = getKeyframeCommands(kf)
+		if (!commands) return
+		return {
+			commands,
+			execute_condition: getKeyframeExecuteCondition(kf),
 		}
 	}
-	return {}
 }
 
 export function updatePreview(animation: _Animation, time: number) {
@@ -306,11 +299,11 @@ export function updatePreview(animation: _Animation, time: number) {
 	// Blockbench.dispatchEvent('display_animation_frame')
 }
 
-function renderAnimation(animation: _Animation, rig: IRenderedRig) {
+export function renderAnimation(animation: _Animation, rig: IRenderedRig) {
 	const rendered = {
 		name: animation.name,
-		storage_name: sanitizeStorageKey(animation.name),
 		uuid: animation.uuid,
+		safe_name: toSafeFuntionName(animation.name).replaceAll('.', '_'),
 		loop_delay: Number(animation.loop_delay) || 0,
 		frames: [],
 		duration: 0,
@@ -327,7 +320,6 @@ function renderAnimation(animation: _Animation, rig: IRenderedRig) {
 		Object.keys(frame.node_transforms).forEach(n => includedNodes.add(n))
 		rendered.frames.push(frame)
 	}
-
 	rendered.duration = rendered.frames.length
 	rendered.modified_nodes = Object.fromEntries(
 		Array.from(includedNodes).map(uuid => [uuid, rig.nodes[uuid]])
@@ -351,18 +343,14 @@ export function hashAnimations(animations: IRenderedAnimation[]) {
 				hash.update(';' + node.rot.join(';'))
 				hash.update(';' + node.scale.join(';'))
 				node.interpolation && hash.update(';' + node.interpolation)
-				if (node.function) hash.update(';' + node.function)
-				if (node.function_execute_condition)
-					hash.update(';' + node.function_execute_condition)
+				if (node.commands) hash.update(';' + node.commands)
+				if (node.execute_condition) hash.update(';' + node.execute_condition)
 			}
-			if (frame.variants) {
-				hash.update(';' + frame.variants)
-				if (frame.variants_execute_condition)
-					hash.update(';' + frame.variants_execute_condition)
+			if (frame.variant) {
+				hash.update(';' + frame.variant.uuid)
+				if (frame.variant.execute_condition)
+					hash.update(';' + frame.variant.execute_condition)
 			}
-			if (frame.function) hash.update(';' + frame.function)
-			if (frame.function_execute_condition)
-				hash.update(';' + frame.function_execute_condition)
 		}
 	}
 	return hash.digest('hex')
@@ -379,19 +367,13 @@ export function getAnimatableNodes(): OutlinerElement[] {
 	]
 }
 
-export async function renderProjectAnimations(project: ModelProject, rig: IRenderedRig) {
+export function renderProjectAnimations(project: ModelProject, rig: IRenderedRig) {
 	// Clear the cache
 	lastAnimation = undefined
 	lastFrameCache = new Map()
 	keyframeCache = new Map()
 	excludedNodesCache = new Set()
 	nodeCache = new Map()
-
-	BONE_INTERPOLATION_ENABLED.set(false)
-
-	PROGRESS_DESCRIPTION.set('Rendering Animations...')
-	PROGRESS.set(0)
-	MAX_PROGRESS.set(project.animations.length)
 
 	console.time('Rendering animations took')
 	let selectedAnimation: _Animation | undefined
@@ -407,12 +389,8 @@ export async function renderProjectAnimations(project: ModelProject, rig: IRende
 	const animations: IRenderedAnimation[] = []
 	for (const animation of project.animations) {
 		animations.push(renderAnimation(animation, rig))
-		PROGRESS.set(PROGRESS.get() + 1)
-		await sleepForAnimationFrame()
 	}
 	restoreSceneAngle()
-
-	BONE_INTERPOLATION_ENABLED.set(true)
 
 	// Restore selected animation
 	if (Mode.selected.id === 'animate' && selectedAnimation) {

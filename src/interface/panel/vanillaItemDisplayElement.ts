@@ -1,48 +1,15 @@
-import { registerProjectMod } from 'src/util/moddingTools'
-import { mountSvelteComponent } from 'src/util/mountSvelteComponent'
+import { isCurrentFormat } from '../../blueprintFormat'
 import VanillaItemDisplayElementPanel from '../../components/vanillaItemDisplayElementPanel.svelte'
 import { PACKAGE } from '../../constants'
-import { activeProjectIsBlueprintFormat, BLUEPRINT_FORMAT_ID } from '../../formats/blueprint'
-import { type ItemDisplayMode, VanillaItemDisplay } from '../../outliner/vanillaItemDisplay'
-import EVENTS from '../../util/events'
+import { VanillaItemDisplay } from '../../outliner/vanillaItemDisplay'
+import { injectSvelteCompomponentMod } from '../../util/injectSvelteComponent'
 import { translate } from '../../util/translation'
 
-let mounted: VanillaItemDisplayElementPanel | null = null
-
-const destroyMounted = () => {
-	mounted?.$destroy()
-	mounted = null
-}
-
-const updatePanel = () => {
-	destroyMounted()
-	const itemDisplay = VanillaItemDisplay.selected.at(0)
-	if (itemDisplay) {
-		mounted = mountSvelteComponent({
-			component: VanillaItemDisplayElementPanel,
-			props: { selected: itemDisplay },
-			target: '#panel_element',
-		})
-	}
-}
-
-registerProjectMod({
-	id: 'animated-java:append-element-panel/vanilla-item-display',
-
-	condition: project => project.format.id === BLUEPRINT_FORMAT_ID,
-
-	apply: () => {
-		const unsubscribers = [
-			EVENTS.UNDO.subscribe(updatePanel),
-			EVENTS.REDO.subscribe(updatePanel),
-			EVENTS.UPDATE_SELECTION.subscribe(updatePanel),
-		]
-		return { unsubscribers }
-	},
-
-	revert: ({ unsubscribers }) => {
-		unsubscribers.forEach(u => u())
-		destroyMounted()
+injectSvelteCompomponentMod({
+	component: VanillaItemDisplayElementPanel,
+	props: {},
+	elementSelector() {
+		return document.querySelector('#panel_element')
 	},
 })
 
@@ -52,7 +19,7 @@ export const ITEM_DISPLAY_ITEM_DISPLAY_SELECT = new BarSelect(
 		name: translate('tool.item_display.item_display.title'),
 		icon: 'format_align_left',
 		description: translate('tool.item_display.item_display.description'),
-		condition: () => activeProjectIsBlueprintFormat() && !!VanillaItemDisplay.selected.length,
+		condition: () => isCurrentFormat() && !!VanillaItemDisplay.selected.length,
 		options: {
 			none: translate('tool.item_display.item_display.options.none'),
 			thirdperson_lefthand: translate(
@@ -79,11 +46,8 @@ ITEM_DISPLAY_ITEM_DISPLAY_SELECT.get = function () {
 	if (!selected) return 'left'
 	return selected.itemDisplay
 }
-ITEM_DISPLAY_ITEM_DISPLAY_SELECT.set = function (
-	this: BarSelect<ItemDisplayMode>,
-	value: ItemDisplayMode
-) {
-	const selected = VanillaItemDisplay.selected.at(0)
+ITEM_DISPLAY_ITEM_DISPLAY_SELECT.set = function (this: BarSelect<string>, value: string) {
+	const selected = VanillaItemDisplay.selected[0]
 	if (!selected) return this
 	this.value = value
 	const name = this.getNameFor(value)
@@ -93,33 +57,6 @@ ITEM_DISPLAY_ITEM_DISPLAY_SELECT.set = function (
 	if (!this.nodes.includes(this.node)) {
 		$(this.node).find('bb-select').text(name)
 	}
-
-	if (selected.itemDisplay === value) return this
-
-	Undo.initEdit({ elements: VanillaItemDisplay.selected })
-	if (VanillaItemDisplay.selected.length > 1) {
-		for (const display of VanillaItemDisplay.selected) {
-			display.itemDisplay = value
-			void display.updateItem()
-		}
-	} else {
-		selected.itemDisplay = value
-		void selected.updateItem()
-	}
-	Project!.saved = false
-	Undo.finishEdit(`Change Item Display Node's Item Display Mode to ${value}`, {
-		elements: VanillaItemDisplay.selected,
-	})
+	selected.itemDisplay = value
 	return this
 }
-function updateItemDisplaySelect() {
-	let value = VanillaItemDisplay.selected.at(0)?.itemDisplay
-	value ??= 'none'
-	ITEM_DISPLAY_ITEM_DISPLAY_SELECT.set(value)
-}
-EVENTS.UNDO.subscribe(() => {
-	updateItemDisplaySelect()
-})
-EVENTS.REDO.subscribe(() => {
-	updateItemDisplaySelect()
-})

@@ -2,7 +2,9 @@
 	import AnimatedJavaIcon from '../assets/animated_java_icon.svg'
 </script>
 
-<img src={AnimatedJavaIcon} alt="" />
+<span class="icon_wrapper f_left" id="animated_java:icon">
+	<img src={AnimatedJavaIcon} alt="" />
+</span>
 
 <style>
 	img {

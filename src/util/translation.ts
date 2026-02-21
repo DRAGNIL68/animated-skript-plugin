@@ -1,4 +1,4 @@
-// @ts-expect-error No types
+// @ts-ignore
 import { default as LANGUAGES, filenames as filepaths } from '../lang/*.yml'
 
 const FILE_NAMES = filepaths.map((path: string) => PathModule.basename(path, '.yml'))
@@ -21,3 +21,5 @@ export function translate(key: string, ...args: string[]) {
 		return key
 	}
 }
+
+Language.data['format_category.animated_java'] = translate('format_category.animated_java')

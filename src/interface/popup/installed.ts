@@ -6,12 +6,11 @@ import { translate } from '../../util/translation'
 export function openInstallPopup() {
 	new SvelteDialog({
 		id: `${PACKAGE.name}:installedPopup`,
-		title: translate('popup.installed_popup.title'),
+		title: translate('dialog.installed_popup.title'),
 		width: 700,
-		content: {
-			component: InstalledPopup,
-		},
+		component: InstalledPopup,
+		props: {},
 		preventKeybinds: true,
-		buttons: [translate('popup.installed_popup.close_button')],
+		buttons: [translate('dialog.installed_popup.close_button')],
 	}).show()
 }

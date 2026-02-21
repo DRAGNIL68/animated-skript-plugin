@@ -1,43 +1,21 @@
-import EVENTS from 'src/util/events'
 import IncompatabilityPopup from '../../components/incompatabilityPopup.svelte'
 import { PACKAGE } from '../../constants'
 import { SvelteDialog } from '../../util/svelteDialog'
 import { translate } from '../../util/translation'
 
-enum INCOMPATABLE_PLUGINS {
-	GECKOLIB_ANIMATION_UTILS = 'animation_utils',
-	GECKOLIB = 'geckolib',
-}
+const INCOMPATABLE_PLUGINS = ['animation_utils']
 
-let currentInstance: SvelteDialog<IncompatabilityPopup> | null = null
+let currentInstance: SvelteDialog<IncompatabilityPopup, any> | null = null
 
 export function openIncompatabilityPopup(plugins: BBPlugin[]) {
-	if (currentInstance) return
 	currentInstance = new SvelteDialog({
 		id: `${PACKAGE.name}:incompatabilityPopup`,
 		title: translate('popup.incompatability_popup.title'),
 		width: 700,
-		content: {
-			component: IncompatabilityPopup,
-			props: { plugins },
-		},
+		component: IncompatabilityPopup,
+		props: { plugins },
 		preventKeybinds: true,
-		preventKeybindCancel: true,
-		buttons: [
-			translate('popup.incompatability_popup.button.disable_all'),
-			translate('popup.incompatability_popup.button.ignore'),
-		],
-		onButton: button => {
-			if (button === 0) {
-				plugins.forEach(plugin => {
-					if (plugin.disabled) return
-					plugin.toggleDisabled()
-				})
-			}
-		},
-		onClose: () => {
-			currentInstance = null
-		},
+		buttons: [],
 	}).show()
 }
 
@@ -50,20 +28,20 @@ export function closeIncompatabilityPopup() {
 }
 
 export function isIncompatiblePlugin(plugin: BBPlugin): boolean {
-	return Object.values(INCOMPATABLE_PLUGINS).includes(plugin.id as INCOMPATABLE_PLUGINS)
+	return INCOMPATABLE_PLUGINS.includes(plugin.id)
 }
 
 export function checkForIncompatabilities() {
-	const incompatiblePlugins = Plugins.all.filter(
-		plugin => plugin.installed && !plugin.disabled && isIncompatiblePlugin(plugin)
-	)
-	if (incompatiblePlugins.length > 0) {
-		openIncompatabilityPopup(incompatiblePlugins)
+	const plugins: BBPlugin[] = []
+	for (const plugin of Plugins.all) {
+		if (!plugin.installed || plugin.disabled || !isIncompatiblePlugin(plugin)) {
+			continue
+		}
+		plugins.push(plugin)
+	}
+	if (plugins.length > 0) {
+		openIncompatabilityPopup(plugins)
 		return true
 	}
 	return false
 }
-
-EVENTS.EXTERNAL_PLUGIN_LOAD.subscribe(() => {
-	checkForIncompatabilities()
-})
